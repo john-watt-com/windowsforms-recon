@@ -14,10 +14,14 @@ Public Sub RunReconciliation()
     Dim valueColumns1 As String
     Dim valueColumns2 As String
     Dim additionalColumns1 As String
+    Dim additionalColumns2 As String
     Dim tolerance As Double
+    Dim detailSheet As String
     Dim dict1 As Object
     Dim dict2 As Object
-    Dim dictAdditional As Object
+    Dim dictAdditional1 As Object
+    Dim dictAdditional2 As Object
+    Dim dictDetailRows As Object
     Dim allIDs As Collection
     
     ' Validate setup
@@ -46,21 +50,34 @@ Public Sub RunReconciliation()
         tolerance = 0.01
     End If
     
+    ' Get detail sheet setting and additional columns from second sheet
+    detailSheet = Trim(UCase(CStr(wsConfig.Range("B8").value)))
+    additionalColumns2 = wsConfig.Range("B9").value
+    
     ' Build dictionaries of ID -> Total
     Set dict1 = BuildTotalsDictionary(ws1, idCol1, valueColumns1)
     Set dict2 = BuildTotalsDictionary(ws2, idCol2, valueColumns2)
     
-    ' Build dictionary of ID -> first row additional column values
-    Set dictAdditional = BuildAdditionalColumnsDictionary(ws1, idCol1, additionalColumns1)
+    ' Build dictionaries of ID -> additional column values (from both sheets)
+    Set dictAdditional1 = BuildAdditionalColumnsDictionary(ws1, idCol1, additionalColumns1)
+    Set dictAdditional2 = BuildAdditionalColumnsDictionary(ws2, idCol2, additionalColumns2)
+    
+    ' Build detail rows dictionary if detail mode is enabled
+    Set dictDetailRows = CreateObject("Scripting.Dictionary")
+    If detailSheet = "SHEET1" Then
+        Set dictDetailRows = BuildAllDetailRowsDictionary(ws1, idCol1, additionalColumns1)
+    ElseIf detailSheet = "SHEET2" Then
+        Set dictDetailRows = BuildAllDetailRowsDictionary(ws2, idCol2, additionalColumns2)
+    End If
     
     ' Get all unique IDs from both sheets
     Set allIDs = GetUniqueIDs(dict1, dict2)
     
     ' Write results
-    WriteResults wsResults, allIDs, dict1, dict2, dictAdditional, additionalColumns1, tolerance
+    WriteResults wsResults, allIDs, dict1, dict2, dictAdditional1, additionalColumns1, tolerance
     
     ' Split results into Match Results and Error Results sheets
-    SplitResults wsResults
+    SplitResults wsResults, ws1, ws2, idCol1, idCol2, detailSheet, dictDetailRows, dict1, dict2, dictAdditional1, dictAdditional2, additionalColumns1, additionalColumns2
     
     MsgBox "Reconciliation completed! " & allIDs.Count & " records processed.", vbInformation, "Success"
 End Sub
@@ -254,6 +271,79 @@ NextRowAdditional:
     Next row
     
     Set BuildAdditionalColumnsDictionary = dict
+End Function
+
+Private Function BuildAllDetailRowsDictionary(ws As Worksheet, idColumnName As String, additionalColumnsStr As String) As Object
+    ' Returns Dictionary with ID as key and Collection of all row dictionaries as value
+    ' Each row dictionary contains column name -> value pairs
+    Dim dict As Object
+    Set dict = CreateObject("Scripting.Dictionary")
+    
+    ' If no additional columns specified, return empty dictionary
+    If Len(Trim(additionalColumnsStr)) = 0 Then
+        Set BuildAllDetailRowsDictionary = dict
+        Exit Function
+    End If
+    
+    ' Find ID column index
+    Dim idColIndex As Long
+    idColIndex = FindColumnIndex(ws, idColumnName)
+    If idColIndex = 0 Then
+        Set BuildAllDetailRowsDictionary = dict
+        Exit Function
+    End If
+    
+    ' Parse additional column names
+    Dim additionalColNames() As String
+    additionalColNames = Split(additionalColumnsStr, ",")
+    
+    ' Find additional column indexes
+    Dim additionalColIndexes() As Long
+    ReDim additionalColIndexes(0 To UBound(additionalColNames))
+    Dim i As Long
+    For i = 0 To UBound(additionalColNames)
+        additionalColNames(i) = Trim(additionalColNames(i))
+        additionalColIndexes(i) = FindColumnIndex(ws, additionalColNames(i))
+        If additionalColIndexes(i) = 0 Then
+            MsgBox "Additional column '" & additionalColNames(i) & "' not found in " & ws.Name, vbCritical, "Error"
+            Set BuildAllDetailRowsDictionary = dict
+            Exit Function
+        End If
+    Next i
+    
+    ' Loop through data rows (starting from row 2)
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.Rows.Count, idColIndex).End(xlUp).row
+    
+    Dim row As Long, id As String
+    Dim rowDict As Object
+    Dim rowCollection As Collection
+    
+    For row = 2 To lastRow
+        id = Trim(CStr(ws.Cells(row, idColIndex).value))
+        
+        ' Skip blank IDs
+        If Len(id) = 0 Then GoTo NextRowAll
+        
+        ' Create dictionary for this row
+        Set rowDict = CreateObject("Scripting.Dictionary")
+        For i = 0 To UBound(additionalColIndexes)
+            rowDict.Add additionalColNames(i), ws.Cells(row, additionalColIndexes(i)).value
+        Next i
+        
+        ' Add to collection for this ID
+        If Not dict.Exists(id) Then
+            Set rowCollection = New Collection
+            dict.Add id, rowCollection
+        Else
+            Set rowCollection = dict(id)
+        End If
+        rowCollection.Add rowDict
+        
+NextRowAll:
+    Next row
+    
+    Set BuildAllDetailRowsDictionary = dict
 End Function
 
 Private Function FindColumnIndex(ws As Worksheet, columnName As String) As Long
@@ -731,7 +821,11 @@ Private Function GetOrCreateWorksheet(sheetName As String) As Worksheet
 End Function
 
 ' Helper: Split results from All Results into Match Results and Error Results sheets
-Private Sub SplitResults(wsAllResults As Worksheet)
+Private Sub SplitResults(wsAllResults As Worksheet, ws1 As Worksheet, ws2 As Worksheet, _
+                         idCol1 As String, idCol2 As String, detailSheet As String, _
+                         dictDetailRows As Object, dict1 As Object, dict2 As Object, _
+                         dictAdditional1 As Object, dictAdditional2 As Object, _
+                         additionalColumns1 As String, additionalColumns2 As String)
     ' Check if ReconResultsTable exists
     Dim tblAll As ListObject
     On Error Resume Next
@@ -758,6 +852,29 @@ Private Sub SplitResults(wsAllResults As Worksheet)
     Set wsMatch = GetOrCreateWorksheet("Match Results")
     Set wsError = GetOrCreateWorksheet("Error Results")
     
+    ' Determine if we're in detail expansion mode
+    Dim isDetailMode As Boolean
+    isDetailMode = (detailSheet = "SHEET1" Or detailSheet = "SHEET2")
+    
+    If isDetailMode Then
+        ' Detail expansion mode for Match Results
+        WriteDetailMatchResults wsMatch, wsAllResults, ws1, ws2, idCol1, idCol2, detailSheet, _
+                                dictDetailRows, dict1, dict2, dictAdditional1, dictAdditional2, _
+                                additionalColumns1, additionalColumns2, idCol, sheet1TotalCol, sheet2TotalCol
+    Else
+        ' Aggregated mode for Match Results (current behavior)
+        WriteAggregatedMatchResults wsMatch, wsAllResults, idCol, lastCol
+    End If
+    
+    ' Error Results: always aggregated (keep current behavior)
+    WriteErrorResults wsError, wsAllResults, idCol, diffCol, lastCol
+End Sub
+
+Private Sub WriteAggregatedMatchResults(wsMatch As Worksheet, wsAllResults As Worksheet, idCol As Long, lastCol As Long)
+    ' Current behavior: Copy aggregated match results
+    Dim tblAll As ListObject
+    Set tblAll = wsAllResults.ListObjects("ReconResultsTable")
+    
     ' Copy headers for Match Results (skip IsMatch and Difference)
     Dim col As Long, matchCol As Long
     matchCol = 1
@@ -766,23 +883,13 @@ Private Sub SplitResults(wsAllResults As Worksheet)
         matchCol = matchCol + 1
     Next col
     
-    ' Copy headers for Error Results (skip IsMatch only, keep Difference)
-    Dim errorCol As Long
-    errorCol = 1
-    wsError.Cells(1, errorCol).value = "Difference": errorCol = errorCol + 1
-    For col = idCol To lastCol
-        wsError.Cells(1, errorCol).value = wsAllResults.Cells(1, col).value
-        errorCol = errorCol + 1
-    Next col
-    
-    ' Loop through data rows and split
-    Dim row As Long, matchRow As Long, errorRow As Long
+    ' Loop through data rows and copy matches
+    Dim row As Long, matchRow As Long
     Dim isMatch As Boolean
     matchRow = 2
-    errorRow = 2
     
     For row = 2 To tblAll.Range.Rows.Count
-        isMatch = wsAllResults.Cells(row, isMatchCol).value
+        isMatch = wsAllResults.Cells(row, 1).value ' IsMatch column
         
         If isMatch Then
             ' Copy to Match Results (skip IsMatch and Difference columns)
@@ -792,23 +899,10 @@ Private Sub SplitResults(wsAllResults As Worksheet)
                 matchCol = matchCol + 1
             Next col
             matchRow = matchRow + 1
-        Else
-            ' Copy to Error Results (skip IsMatch, keep Difference)
-            errorCol = 1
-            wsError.Cells(errorRow, errorCol).value = wsAllResults.Cells(row, diffCol).value
-            errorCol = errorCol + 1
-            For col = idCol To lastCol
-                wsError.Cells(errorRow, errorCol).value = wsAllResults.Cells(row, col).value
-                errorCol = errorCol + 1
-            Next col
-            
-            ' Highlight error rows
-            wsError.Rows(errorRow).Interior.Color = RGB(255, 200, 200)
-            errorRow = errorRow + 1
         End If
     Next row
     
-    ' Create tables for Match Results
+    ' Create table if we have matches
     If matchRow > 2 Then
         Dim matchLastCol As Long
         matchLastCol = wsMatch.Cells(1, wsMatch.Columns.Count).End(xlToLeft).Column
@@ -836,8 +930,233 @@ Private Sub SplitResults(wsAllResults As Worksheet)
         
         wsMatch.Columns("A:" & ColLetter(matchLastCol)).AutoFit
     End If
+End Sub
+
+Private Sub WriteDetailMatchResults(wsMatch As Worksheet, wsAllResults As Worksheet, _
+                                     ws1 As Worksheet, ws2 As Worksheet, _
+                                     idCol1 As String, idCol2 As String, detailSheet As String, _
+                                     dictDetailRows As Object, dict1 As Object, dict2 As Object, _
+                                     dictAdditional1 As Object, dictAdditional2 As Object, _
+                                     additionalColumns1 As String, additionalColumns2 As String, _
+                                     idCol As Long, sheet1TotalCol As Long, sheet2TotalCol As Long)
+    ' Detail expansion mode: Output detail rows for matched IDs
+    Dim tblAll As ListObject
+    Set tblAll = wsAllResults.ListObjects("ReconResultsTable")
     
-    ' Create tables for Error Results
+    ' Parse additional column names for both sheets
+    Dim additionalCols1() As String, additionalCols2() As String
+    Dim hasAdditional1 As Boolean, hasAdditional2 As Boolean
+    
+    hasAdditional1 = (Len(Trim(additionalColumns1)) > 0)
+    hasAdditional2 = (Len(Trim(additionalColumns2)) > 0)
+    
+    Dim i As Long
+    If hasAdditional1 Then
+        additionalCols1 = Split(additionalColumns1, ",")
+        For i = 0 To UBound(additionalCols1)
+            additionalCols1(i) = Trim(additionalCols1(i))
+        Next i
+    End If
+    
+    If hasAdditional2 Then
+        additionalCols2 = Split(additionalColumns2, ",")
+        For i = 0 To UBound(additionalCols2)
+            additionalCols2(i) = Trim(additionalCols2(i))
+        Next i
+    End If
+    
+    ' Build header row
+    Dim col As Long
+    col = 1
+    wsMatch.Cells(1, col).value = "ID": col = col + 1
+    
+    ' Add detail sheet's additional columns first
+    If detailSheet = "SHEET1" And hasAdditional1 Then
+        For i = 0 To UBound(additionalCols1)
+            wsMatch.Cells(1, col).value = additionalCols1(i)
+            col = col + 1
+        Next i
+    ElseIf detailSheet = "SHEET2" And hasAdditional2 Then
+        For i = 0 To UBound(additionalCols2)
+            wsMatch.Cells(1, col).value = additionalCols2(i)
+            col = col + 1
+        Next i
+    End If
+    
+    ' Add totals
+    wsMatch.Cells(1, col).value = "Sheet1 Total": col = col + 1
+    wsMatch.Cells(1, col).value = "Sheet2 Total": col = col + 1
+    
+    ' Add summary sheet's additional columns
+    If detailSheet = "SHEET1" And hasAdditional2 Then
+        For i = 0 To UBound(additionalCols2)
+            wsMatch.Cells(1, col).value = additionalCols2(i)
+            col = col + 1
+        Next i
+    ElseIf detailSheet = "SHEET2" And hasAdditional1 Then
+        For i = 0 To UBound(additionalCols1)
+            wsMatch.Cells(1, col).value = additionalCols1(i)
+            col = col + 1
+        Next i
+    End If
+    
+    Dim lastHeaderCol As Long
+    lastHeaderCol = col - 1
+    
+    ' Format header
+    With wsMatch.Range(wsMatch.Cells(1, 1), wsMatch.Cells(1, lastHeaderCol))
+        .Font.Bold = True
+        .Interior.Color = RGB(200, 200, 200)
+    End With
+    
+    ' Write detail rows for matched IDs
+    Dim row As Long, matchRow As Long
+    Dim isMatch As Boolean, id As String
+    Dim total1 As Double, total2 As Double
+    Dim detailRows As Collection, detailRow As Object
+    Dim summaryDict As Object
+    Dim j As Long
+    
+    matchRow = 2
+    For row = 2 To tblAll.Range.Rows.Count
+        isMatch = wsAllResults.Cells(row, 1).value ' IsMatch column
+        
+        If isMatch Then
+            id = CStr(wsAllResults.Cells(row, idCol).value)
+            total1 = wsAllResults.Cells(row, sheet1TotalCol).value
+            total2 = wsAllResults.Cells(row, sheet2TotalCol).value
+            
+            ' Get detail rows for this ID
+            If dictDetailRows.Exists(id) Then
+                Set detailRows = dictDetailRows(id)
+                
+                ' Get summary sheet's additional columns
+                If detailSheet = "SHEET1" Then
+                    Set summaryDict = Nothing
+                    If dictAdditional2.Exists(id) Then Set summaryDict = dictAdditional2(id)
+                Else
+                    Set summaryDict = Nothing
+                    If dictAdditional1.Exists(id) Then Set summaryDict = dictAdditional1(id)
+                End If
+                
+                ' Write each detail row
+                For Each detailRow In detailRows
+                    col = 1
+                    wsMatch.Cells(matchRow, col).value = id: col = col + 1
+                    
+                    ' Write detail columns
+                    If detailSheet = "SHEET1" And hasAdditional1 Then
+                        For i = 0 To UBound(additionalCols1)
+                            If detailRow.Exists(additionalCols1(i)) Then
+                                wsMatch.Cells(matchRow, col).value = detailRow(additionalCols1(i))
+                            End If
+                            col = col + 1
+                        Next i
+                    ElseIf detailSheet = "SHEET2" And hasAdditional2 Then
+                        For i = 0 To UBound(additionalCols2)
+                            If detailRow.Exists(additionalCols2(i)) Then
+                                wsMatch.Cells(matchRow, col).value = detailRow(additionalCols2(i))
+                            End If
+                            col = col + 1
+                        Next i
+                    End If
+                    
+                    ' Write totals (repeated for each detail row)
+                    wsMatch.Cells(matchRow, col).value = total1: col = col + 1
+                    wsMatch.Cells(matchRow, col).value = total2: col = col + 1
+                    
+                    ' Write summary columns
+                    If Not summaryDict Is Nothing Then
+                        If detailSheet = "SHEET1" And hasAdditional2 Then
+                            For i = 0 To UBound(additionalCols2)
+                                If summaryDict.Exists(additionalCols2(i)) Then
+                                    wsMatch.Cells(matchRow, col).value = summaryDict(additionalCols2(i))
+                                End If
+                                col = col + 1
+                            Next i
+                        ElseIf detailSheet = "SHEET2" And hasAdditional1 Then
+                            For i = 0 To UBound(additionalCols1)
+                                If summaryDict.Exists(additionalCols1(i)) Then
+                                    wsMatch.Cells(matchRow, col).value = summaryDict(additionalCols1(i))
+                                End If
+                                col = col + 1
+                            Next i
+                        End If
+                    End If
+                    
+                    matchRow = matchRow + 1
+                Next detailRow
+            End If
+        End If
+    Next row
+    
+    ' Create table if we have matches
+    If matchRow > 2 Then
+        Dim matchTableRange As Range
+        Set matchTableRange = wsMatch.Range(wsMatch.Cells(1, 1), wsMatch.Cells(matchRow - 1, lastHeaderCol))
+        
+        On Error Resume Next
+        wsMatch.ListObjects("MatchResultsTable").Delete
+        On Error GoTo 0
+        
+        wsMatch.ListObjects.Add(xlSrcRange, matchTableRange, , xlYes).Name = "MatchResultsTable"
+        wsMatch.ListObjects("MatchResultsTable").TableStyle = "TableStyleMedium3"
+        
+        ' Format number columns (totals)
+        Dim totalCol1 As Long, totalCol2 As Long
+        If detailSheet = "SHEET1" And hasAdditional1 Then
+            totalCol1 = 2 + UBound(additionalCols1) + 1
+        ElseIf detailSheet = "SHEET2" And hasAdditional2 Then
+            totalCol1 = 2 + UBound(additionalCols2) + 1
+        Else
+            totalCol1 = 2
+        End If
+        totalCol2 = totalCol1 + 1
+        
+        wsMatch.Range(wsMatch.Cells(2, totalCol1), wsMatch.Cells(matchRow - 1, totalCol2)).NumberFormat = "#,##0.00"
+        wsMatch.Columns("A:" & ColLetter(lastHeaderCol)).AutoFit
+    End If
+End Sub
+
+Private Sub WriteErrorResults(wsError As Worksheet, wsAllResults As Worksheet, idCol As Long, diffCol As Long, lastCol As Long)
+    ' Error Results: always aggregated
+    Dim tblAll As ListObject
+    Set tblAll = wsAllResults.ListObjects("ReconResultsTable")
+    
+    ' Copy headers for Error Results (skip IsMatch only, keep Difference)
+    Dim col As Long, errorCol As Long
+    errorCol = 1
+    wsError.Cells(1, errorCol).value = "Difference": errorCol = errorCol + 1
+    For col = idCol To lastCol
+        wsError.Cells(1, errorCol).value = wsAllResults.Cells(1, col).value
+        errorCol = errorCol + 1
+    Next col
+    
+    ' Loop through data rows and copy errors
+    Dim row As Long, errorRow As Long
+    Dim isMatch As Boolean
+    errorRow = 2
+    
+    For row = 2 To tblAll.Range.Rows.Count
+        isMatch = wsAllResults.Cells(row, 1).value ' IsMatch column
+        
+        If Not isMatch Then
+            ' Copy to Error Results (skip IsMatch, keep Difference)
+            errorCol = 1
+            wsError.Cells(errorRow, errorCol).value = wsAllResults.Cells(row, diffCol).value
+            errorCol = errorCol + 1
+            For col = idCol To lastCol
+                wsError.Cells(errorRow, errorCol).value = wsAllResults.Cells(row, col).value
+                errorCol = errorCol + 1
+            Next col
+            
+            ' Highlight error rows
+            wsError.Rows(errorRow).Interior.Color = RGB(255, 200, 200)
+            errorRow = errorRow + 1
+        End If
+    Next row
+    
+    ' Create table if we have errors
     If errorRow > 2 Then
         Dim errorLastCol As Long
         errorLastCol = wsError.Cells(1, wsError.Columns.Count).End(xlToLeft).Column
