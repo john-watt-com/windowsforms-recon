@@ -14,7 +14,7 @@ Public Sub RunReconciliation()
     Dim ws1 As Worksheet, ws2 As Worksheet, wsResults As Worksheet, wsConfig As Worksheet
     Set ws1 = ThisWorkbook.Worksheets("Sheet1")
     Set ws2 = ThisWorkbook.Worksheets("Sheet2")
-    Set wsResults = ThisWorkbook.Worksheets("Results")
+    Set wsResults = GetOrCreateWorksheet("All Results")
     Set wsConfig = ThisWorkbook.Worksheets("Config")
     
     ' Get ID columns and value columns from config sheet
@@ -43,6 +43,9 @@ Public Sub RunReconciliation()
     
     ' Write results
     WriteResults wsResults, allIDs, dict1, dict2, dictAdditional, additionalColumns1
+    
+    ' Split results into Match Results and Error Results sheets
+    SplitResults wsResults
     
     MsgBox "Reconciliation completed! " & allIDs.Count & " records processed.", vbInformation, "Success"
 End Sub
@@ -395,8 +398,9 @@ Private Function ColLetter(colNum As Long) As String
 End Function
 
 Private Sub ClearResults()
+    ' Clear All Results sheet
     Dim wsResults As Worksheet
-    Set wsResults = ThisWorkbook.Worksheets("Results")
+    Set wsResults = GetOrCreateWorksheet("All Results")
     
     ' Delete existing table if present
     On Error Resume Next
@@ -405,6 +409,22 @@ Private Sub ClearResults()
     
     ' Clear all cells
     wsResults.Cells.Clear
+    
+    ' Clear Match Results sheet
+    Dim wsMatch As Worksheet
+    Set wsMatch = GetOrCreateWorksheet("Match Results")
+    On Error Resume Next
+    wsMatch.ListObjects("MatchResultsTable").Delete
+    On Error GoTo 0
+    wsMatch.Cells.Clear
+    
+    ' Clear Error Results sheet
+    Dim wsError As Worksheet
+    Set wsError = GetOrCreateWorksheet("Error Results")
+    On Error Resume Next
+    wsError.ListObjects("ErrorResultsTable").Delete
+    On Error GoTo 0
+    wsError.Cells.Clear
 End Sub
 
 Private Sub QuickSort(arr() As String, ByVal left As Long, ByVal right As Long)
@@ -472,4 +492,157 @@ End Sub
 ' Or assign it to a button on your worksheet
 Public Sub ShowReconForm()
     ReconForm.Show
+End Sub
+
+' Helper: Get worksheet by name or create it if it doesn't exist
+Private Function GetOrCreateWorksheet(sheetName As String) As Worksheet
+    Dim ws As Worksheet
+    
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets(sheetName)
+    On Error GoTo 0
+    
+    If ws Is Nothing Then
+        Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+        ws.Name = sheetName
+    End If
+    
+    Set GetOrCreateWorksheet = ws
+End Function
+
+' Helper: Split results from All Results into Match Results and Error Results sheets
+Private Sub SplitResults(wsAllResults As Worksheet)
+    ' Check if ReconResultsTable exists
+    Dim tblAll As ListObject
+    On Error Resume Next
+    Set tblAll = wsAllResults.ListObjects("ReconResultsTable")
+    On Error GoTo 0
+    
+    If tblAll Is Nothing Then Exit Sub
+    If tblAll.ListRows.Count = 0 Then Exit Sub
+    
+    ' Find column indexes in All Results
+    Dim isMatchCol As Long, diffCol As Long, idCol As Long
+    Dim sheet1TotalCol As Long, sheet2TotalCol As Long
+    Dim lastCol As Long
+    
+    isMatchCol = 1  ' Column A
+    diffCol = 2     ' Column B
+    idCol = 3       ' Column C
+    sheet1TotalCol = 4  ' Column D
+    sheet2TotalCol = 5  ' Column E
+    lastCol = wsAllResults.Cells(1, wsAllResults.Columns.Count).End(xlToLeft).Column
+    
+    ' Get Match Results and Error Results worksheets
+    Dim wsMatch As Worksheet, wsError As Worksheet
+    Set wsMatch = GetOrCreateWorksheet("Match Results")
+    Set wsError = GetOrCreateWorksheet("Error Results")
+    
+    ' Copy headers for Match Results (skip IsMatch and Difference)
+    Dim col As Long, matchCol As Long
+    matchCol = 1
+    For col = idCol To lastCol
+        wsMatch.Cells(1, matchCol).Value = wsAllResults.Cells(1, col).Value
+        matchCol = matchCol + 1
+    Next col
+    
+    ' Copy headers for Error Results (skip IsMatch only, keep Difference)
+    Dim errorCol As Long
+    errorCol = 1
+    wsError.Cells(1, errorCol).Value = "Difference": errorCol = errorCol + 1
+    For col = idCol To lastCol
+        wsError.Cells(1, errorCol).Value = wsAllResults.Cells(1, col).Value
+        errorCol = errorCol + 1
+    Next col
+    
+    ' Loop through data rows and split
+    Dim row As Long, matchRow As Long, errorRow As Long
+    Dim isMatch As Boolean
+    matchRow = 2
+    errorRow = 2
+    
+    For row = 2 To tblAll.Range.Rows.Count
+        isMatch = wsAllResults.Cells(row, isMatchCol).Value
+        
+        If isMatch Then
+            ' Copy to Match Results (skip IsMatch and Difference columns)
+            matchCol = 1
+            For col = idCol To lastCol
+                wsMatch.Cells(matchRow, matchCol).Value = wsAllResults.Cells(row, col).Value
+                matchCol = matchCol + 1
+            Next col
+            matchRow = matchRow + 1
+        Else
+            ' Copy to Error Results (skip IsMatch, keep Difference)
+            errorCol = 1
+            wsError.Cells(errorRow, errorCol).Value = wsAllResults.Cells(row, diffCol).Value
+            errorCol = errorCol + 1
+            For col = idCol To lastCol
+                wsError.Cells(errorRow, errorCol).Value = wsAllResults.Cells(row, col).Value
+                errorCol = errorCol + 1
+            Next col
+            
+            ' Highlight error rows
+            wsError.Rows(errorRow).Interior.Color = RGB(255, 200, 200)
+            errorRow = errorRow + 1
+        End If
+    Next row
+    
+    ' Create tables for Match Results
+    If matchRow > 2 Then
+        Dim matchLastCol As Long
+        matchLastCol = wsMatch.Cells(1, wsMatch.Columns.Count).End(xlToLeft).Column
+        
+        Dim matchTableRange As Range
+        Set matchTableRange = wsMatch.Range(wsMatch.Cells(1, 1), wsMatch.Cells(matchRow - 1, matchLastCol))
+        
+        On Error Resume Next
+        wsMatch.ListObjects("MatchResultsTable").Delete
+        On Error GoTo 0
+        
+        wsMatch.ListObjects.Add(xlSrcRange, matchTableRange, , xlYes).Name = "MatchResultsTable"
+        wsMatch.ListObjects("MatchResultsTable").TableStyle = "TableStyleMedium3"
+        
+        ' Format Match Results header
+        With wsMatch.Range(wsMatch.Cells(1, 1), wsMatch.Cells(1, matchLastCol))
+            .Font.Bold = True
+            .Interior.Color = RGB(200, 200, 200)
+        End With
+        
+        ' Format number columns in Match Results (Sheet1 Total and Sheet2 Total)
+        If matchLastCol >= 2 Then
+            wsMatch.Range(wsMatch.Cells(2, 2), wsMatch.Cells(matchRow - 1, 3)).NumberFormat = "#,##0.00"
+        End If
+        
+        wsMatch.Columns("A:" & ColLetter(matchLastCol)).AutoFit
+    End If
+    
+    ' Create tables for Error Results
+    If errorRow > 2 Then
+        Dim errorLastCol As Long
+        errorLastCol = wsError.Cells(1, wsError.Columns.Count).End(xlToLeft).Column
+        
+        Dim errorTableRange As Range
+        Set errorTableRange = wsError.Range(wsError.Cells(1, 1), wsError.Cells(errorRow - 1, errorLastCol))
+        
+        On Error Resume Next
+        wsError.ListObjects("ErrorResultsTable").Delete
+        On Error GoTo 0
+        
+        wsError.ListObjects.Add(xlSrcRange, errorTableRange, , xlYes).Name = "ErrorResultsTable"
+        wsError.ListObjects("ErrorResultsTable").TableStyle = "TableStyleMedium1"
+        
+        ' Format Error Results header
+        With wsError.Range(wsError.Cells(1, 1), wsError.Cells(1, errorLastCol))
+            .Font.Bold = True
+            .Interior.Color = RGB(200, 200, 200)
+        End With
+        
+        ' Format number columns in Error Results (Difference, Sheet1 Total, Sheet2 Total)
+        If errorLastCol >= 3 Then
+            wsError.Range(wsError.Cells(2, 1), wsError.Cells(errorRow - 1, 3)).NumberFormat = "#,##0.00"
+        End If
+        
+        wsError.Columns("A:" & ColLetter(errorLastCol)).AutoFit
+    End If
 End Sub

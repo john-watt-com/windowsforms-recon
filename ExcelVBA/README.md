@@ -4,7 +4,8 @@ VBA port of the C# Windows Forms Excel Reconciliation App. Compares two Excel fi
 
 ## Quick Start
 
-1. **Create workbook** with sheets: `Sheet1`, `Sheet2`, `Config`, `Results`
+1. **Create workbook** with sheets: `Sheet1`, `Sheet2`, `Config`, `All Results`
+   - Note: `Match Results` and `Error Results` sheets are created automatically
 2. **Set up Config sheet** with ID columns and value columns (see [CONFIG_EXAMPLE.md](CONFIG_EXAMPLE.md))
 3. **Import VBA code**:
    - Module: [ReconModule.vba](ReconModule.vba)
@@ -20,7 +21,10 @@ See [SETUP_INSTRUCTIONS.md](SETUP_INSTRUCTIONS.md) for detailed setup steps.
    - Sum specified numeric columns from Sheet1
    - Sum specified numeric columns from Sheet2
    - Compare totals (tolerance: 0.01)
-3. Output results to Results sheet with match/mismatch highlighting
+3. Output results to three sheets:
+   - **All Results**: Complete reconciliation data
+   - **Match Results**: Only matching records (clean view without IsMatch/Difference)
+   - **Error Results**: Only mismatched records with highlighting
 
 ## Files
 

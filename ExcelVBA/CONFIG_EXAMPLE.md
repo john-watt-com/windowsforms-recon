@@ -40,12 +40,40 @@ If your Excel files look like this:
 
 ## Expected Results
 
-Results are displayed as a Table with columns in this order:
+Results are split across three worksheets:
+
+### All Results Sheet
 
 | IsMatch | Difference | ID | Sheet1 Total | Sheet2 Total | Region |
 |---------|------------|----|--------------|--------------|--------|
 | TRUE | 0 | C001 | 1080 | 1080 | North |
 | TRUE | 0 | C002 | 1620 | 1620 | South |
+
+- Complete data with all columns
+- Useful for full audit trail
+
+### Match Results Sheet
+
+| ID | Sheet1 Total | Sheet2 Total | Region |
+|----|--------------|--------------|--------|
+| C001 | 1080 | 1080 | North |
+| C002 | 1620 | 1620 | South |
+
+- Only matching records (IsMatch = TRUE)
+- **Excludes**: IsMatch and Difference columns
+- Clean view for confirmed reconciliations
+
+### Error Results Sheet
+
+| Difference | ID | Sheet1 Total | Sheet2 Total | Region |
+|------------|----|--------------|--------------|--------|
+| _(no errors in this example)_ |
+
+- Only mismatched records (IsMatch = FALSE)
+- **Includes**: Difference column (for quick issue identification)
+- **Excludes**: IsMatch column
+- All rows highlighted in red
+- Empty if all records match
 
 **Column Explanation:**
 - **IsMatch**: TRUE if difference is < 0.01, FALSE otherwise
