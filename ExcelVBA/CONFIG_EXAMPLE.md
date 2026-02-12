@@ -18,6 +18,7 @@ If your Excel files look like this:
 
 ## Your Recon Config Sheet Should Look Like:
 
+### Aggregated Mode (Default)
 | A | B |
 |---|---|
 | **Setting** | **Value** |
@@ -27,6 +28,8 @@ If your Excel files look like this:
 | Sheet2 Value Columns | TotalRevenue |
 | Sheet1 Additional Columns | Region |
 | Tolerance | 0.01 |
+| Detail Sheet | _(blank)_ |
+| Sheet2 Additional Columns | _(blank)_ |
 
 ## What This Does
 
@@ -121,3 +124,79 @@ This will sum all four quarters from Sheet1 and compare against the annual total
 3. **ID columns are compared as text**, so "001" ≠ "1"
 4. **Non-numeric values are ignored** in value columns (treated as 0)
 5. **Multiple rows with same ID** will be summed together
+---
+
+## Advanced: Detail Expansion Mode
+
+### When to Use Detail Expansion
+
+Sometimes one sheet has **detail-level data** (multiple rows per ID) while the other has **summary data** (one row per ID). After reconciling the aggregated totals, you may want to see the individual detail rows for matched IDs.
+
+**Detail Expansion Mode** expands the Match Results to show:
+- One row for each detail row from the detail sheet
+- Totals from both sheets (repeated on every detail row)
+- Additional columns from both the detail sheet and the summary sheet
+
+### Configuration for Detail Expansion
+
+Add these settings to your Recon Config:
+
+| A | B |
+|---|---|
+| **Setting** | **Value** |
+| Sheet1 ID Column | OrderID |
+| Sheet2 ID Column | OrderID |
+| Sheet1 Value Columns | LineAmount |
+| Sheet2 Value Columns | TotalAmount |
+| Sheet1 Additional Columns | LineNumber,Product,Quantity |
+| Tolerance | 0.01 |
+| Detail Sheet | SHEET1 |
+| Sheet2 Additional Columns | CustomerName,OrderDate |
+
+**Key Settings:**
+- **Detail Sheet (Row 8)**: Specify which sheet has the detail-level data
+  - Use `SHEET1` if Sheet1 has multiple rows per ID
+  - Use `SHEET2` if Sheet2 has multiple rows per ID
+  - Leave blank for standard aggregated mode
+- **Sheet2 Additional Columns (Row 9)**: Comma-separated list of columns from Sheet2 to include in results
+  - Only needed when using detail expansion
+  - These columns are joined from the summary sheet to each detail row
+
+### Example: Order Line Items vs Order Totals
+
+**Sheet1 (Detail - Order Line Items):**
+| OrderID | LineNumber | Product | Quantity | LineAmount |
+|---------|------------|---------|----------|------------|
+| ORD001 | 1 | Widget A | 2 | 100 |
+| ORD001 | 2 | Widget B | 1 | 50 |
+| ORD002 | 1 | Widget C | 3 | 150 |
+
+**Sheet2 (Summary - Order Totals):**
+| OrderID | CustomerName | OrderDate | TotalAmount |
+|---------|--------------|-----------|-------------|
+| ORD001 | Acme Corp | 2024-01-15 | 150 |
+| ORD002 | Beta Inc | 2024-01-16 | 150 |
+
+### Results with Detail Expansion
+
+With `Detail Sheet = SHEET1` and `Sheet2 Additional Columns = CustomerName,OrderDate`, the **Match Results** sheet will show:
+
+| ID | LineNumber | Product | Quantity | Sheet1 Total | Sheet2 Total | CustomerName | OrderDate |
+|----|------------|---------|----------|--------------|--------------|--------------|-----------|
+| ORD001 | 1 | Widget A | 2 | 150 | 150 | Acme Corp | 2024-01-15 |
+| ORD001 | 2 | Widget B | 1 | 150 | 150 | Acme Corp | 2024-01-15 |
+| ORD002 | 1 | Widget C | 3 | 150 | 150 | Beta Inc | 2024-01-16 |
+
+**Notice:**
+- Each line item from Sheet1 becomes a separate row
+- The totals (150, 150, 150) are repeated on every detail row for the same OrderID
+- Sheet2's columns (CustomerName, OrderDate) are joined to each detail row
+
+### Mode Comparison
+
+| Mode | Detail Sheet Setting | Match Results Output | Use Case |
+|------|---------------------|----------------------|----------|
+| **Aggregated** | _(blank)_ | 1 row per ID with totals | Standard reconciliation, summary comparison |
+| **Detail Expansion** | `SHEET1` or `SHEET2` | 1 row per detail row with joined data | Detail-level analysis after reconciliation |
+
+**Error Results** are always aggregated (1 row per ID) regardless of mode.

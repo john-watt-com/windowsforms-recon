@@ -23,8 +23,17 @@ See [SETUP_INSTRUCTIONS.md](SETUP_INSTRUCTIONS.md) for detailed setup steps.
    - Compare totals (configurable tolerance, default 0.01)
 3. Output results to three sheets:
    - **All Results**: Complete reconciliation data
-   - **Match Results**: Only matching records (clean view without IsMatch/Difference)
+   - **Match Results**: Only matching records (aggregated or detail-expanded based on config)
    - **Error Results**: Only mismatched records with highlighting
+
+## Features
+
+- **Configurable tolerance** - Set acceptable difference threshold (default 0.01)
+- **Add/Subtract operations** - Use `+Column` to add, `-Column` to subtract (e.g., `+Debits,-Credits`)
+- **Additional columns** - Include descriptive columns from both sheets in results
+- **Detail expansion mode** - Expand matched results to show all detail rows when one sheet is at summary level
+- **Transform feature** - Create custom views with column selection, static values, and formulas
+- **Automatic table formatting** - Results formatted as Excel tables with filtering/sorting
 
 ## Files
 

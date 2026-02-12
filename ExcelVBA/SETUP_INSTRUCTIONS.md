@@ -42,11 +42,16 @@ In the **Recon Config** worksheet, set up the following:
 | 5   | Sheet2 Value Columns | _(comma-separated, e.g., "TotalAmount")_ |
 | 6   | Sheet1 Additional Columns | _(optional: comma-separated columns to display, e.g., "Region,Department")_ |
 | 7   | Tolerance | _(optional: numeric value, e.g., "0.01". Defaults to 0.01 if not specified)_ |
+| 8   | Detail Sheet | _(optional: "SHEET1" or "SHEET2" for detail expansion mode)_ |
+| 9   | Sheet2 Additional Columns | _(optional: comma-separated columns from Sheet2, only used with detail expansion)_ |
 
 **Notes:** 
-- Row 6 (Sheet1 Additional Columns) is optional. If specified, the first occurrence of each ID from Sheet1 will have these column values displayed in the results.
-- Row 7 (Tolerance) is optional. Sets the maximum difference for records to be considered matching. Default is 0.01.
-- Row 4 & 5 (Value Columns) support +/- prefixes: use `+` to add columns, `-` to subtract them (e.g., "+Debits,-Credits").
+- **Row 2-3 (ID Columns)**: Required. Column names must match exactly (case-sensitive).
+- **Row 4-5 (Value Columns)**: Required. Support +/- prefixes: use `+` to add columns, `-` to subtract them (e.g., "+Debits,-Credits"). No prefix defaults to addition.
+- **Row 6 (Sheet1 Additional Columns)**: Optional. Columns from Sheet1 to include in results.
+- **Row 7 (Tolerance)**: Optional. Maximum difference for matches. Default is 0.01.
+- **Row 8 (Detail Sheet)**: Optional. Leave blank for aggregated mode (default). Set to "SHEET1" or "SHEET2" for detail expansion mode (see Advanced Features below).
+- **Row 9 (Sheet2 Additional Columns)**: Optional. Only used with detail expansion mode. Columns from Sheet2 to join to detail rows.
 
 ### 4. Enable Developer Tab
 
@@ -199,6 +204,71 @@ Excel Table named "ErrorResultsTable" with only mismatched records (IsMatch = FA
 - Click dropdown arrows in headers to filter
 - Error Results are pre-highlighted in red
 - Each sheet can be used independently for reporting
+
+## Advanced Features
+
+### Detail Expansion Mode
+
+**Purpose:** When one sheet has detail-level data (multiple rows per ID) and the other has summary data, you can expand matched results to show all detail rows.
+
+**Use Case:** After verifying that aggregated totals match, you want to see individual detail rows with joined summary information for further analysis or transformation.
+
+**Configuration:**
+1. Set **Detail Sheet** (Row 8 in Recon Config) to:
+   - `SHEET1` if Sheet1 has detail rows (multiple rows per ID)
+   - `SHEET2` if Sheet2 has detail rows
+   - Leave blank for standard aggregated mode
+2. Set **Sheet2 Additional Columns** (Row 9) if needed:
+   - Comma-separated list of columns from Sheet2 to join to detail rows
+   - Only used when Detail Sheet is set
+
+**Example Scenario:**
+
+You have order line items in Sheet1 and order totals in Sheet2:
+
+**Sheet1 (Detail - Line Items):**
+| OrderID | LineNumber | Product | Quantity | LineAmount |
+|---------|------------|---------|----------|------------|
+| ORD001 | 1 | Widget A | 2 | 100 |
+| ORD001 | 2 | Widget B | 1 | 50 |
+| ORD002 | 1 | Widget C | 3 | 150 |
+
+**Sheet2 (Summary - Order Totals):**
+| OrderID | CustomerName | OrderDate | TotalAmount |
+|---------|--------------|-----------|-------------|
+| ORD001 | Acme Corp | 2024-01-15 | 150 |
+| ORD002 | Beta Inc | 2024-01-16 | 150 |
+
+**Recon Config Setup:**
+```
+Row 2: OrderID
+Row 3: OrderID
+Row 4: LineAmount
+Row 5: TotalAmount
+Row 6: LineNumber,Product,Quantity
+Row 7: 0.01
+Row 8: SHEET1
+Row 9: CustomerName,OrderDate
+```
+
+**Match Results Output (Detail Expansion):**
+| ID | LineNumber | Product | Quantity | Sheet1 Total | Sheet2 Total | CustomerName | OrderDate |
+|----|------------|---------|----------|--------------|--------------|--------------|-----------|
+| ORD001 | 1 | Widget A | 2 | 150 | 150 | Acme Corp | 2024-01-15 |
+| ORD001 | 2 | Widget B | 1 | 150 | 150 | Acme Corp | 2024-01-15 |
+| ORD002 | 1 | Widget C | 3 | 150 | 150 | Beta Inc | 2024-01-16 |
+
+**Notice:**
+- Each line item becomes a separate row
+- Totals are repeated for each detail row of the same ID
+- Sheet2 columns (CustomerName, OrderDate) are joined to each detail row
+- Error Results remain aggregated (1 row per ID)
+
+**Mode Comparison:**
+| Mode | Detail Sheet | Match Results | Best For |
+|------|-------------|---------------|----------|
+| **Aggregated** | _(blank)_ | 1 row per ID | Standard reconciliation |
+| **Detail Expansion** | SHEET1/SHEET2 | 1 row per detail row | Granular analysis, transformations |
 
 ## Input Requirements
 
