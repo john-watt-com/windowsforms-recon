@@ -18,9 +18,9 @@ See [SETUP_INSTRUCTIONS.md](SETUP_INSTRUCTIONS.md) for detailed setup steps.
 
 1. Load two external Excel files into Sheet1 and Sheet2
 2. For each unique ID:
-   - Sum specified numeric columns from Sheet1
-   - Sum specified numeric columns from Sheet2
-   - Compare totals (tolerance: 0.01)
+   - Sum specified numeric columns from Sheet1 (supports +/- prefixes for add/subtract)
+   - Sum specified numeric columns from Sheet2 (supports +/- prefixes for add/subtract)
+   - Compare totals (configurable tolerance, default 0.01)
 3. Output results to three sheets:
    - **All Results**: Complete reconciliation data
    - **Match Results**: Only matching records (clean view without IsMatch/Difference)

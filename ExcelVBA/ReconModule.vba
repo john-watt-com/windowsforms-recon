@@ -14,6 +14,7 @@ Public Sub RunReconciliation()
     Dim valueColumns1 As String
     Dim valueColumns2 As String
     Dim additionalColumns1 As String
+    Dim tolerance As Double
     Dim dict1 As Object
     Dim dict2 As Object
     Dim dictAdditional As Object
@@ -38,6 +39,13 @@ Public Sub RunReconciliation()
     valueColumns2 = wsConfig.Range("B5").value
     additionalColumns1 = wsConfig.Range("B6").value
     
+    ' Get tolerance (default to 0.01 if not specified or invalid)
+    If IsNumeric(wsConfig.Range("B7").value) And wsConfig.Range("B7").value >= 0 Then
+        tolerance = CDbl(wsConfig.Range("B7").value)
+    Else
+        tolerance = 0.01
+    End If
+    
     ' Build dictionaries of ID -> Total
     Set dict1 = BuildTotalsDictionary(ws1, idCol1, valueColumns1)
     Set dict2 = BuildTotalsDictionary(ws2, idCol2, valueColumns2)
@@ -49,7 +57,7 @@ Public Sub RunReconciliation()
     Set allIDs = GetUniqueIDs(dict1, dict2)
     
     ' Write results
-    WriteResults wsResults, allIDs, dict1, dict2, dictAdditional, additionalColumns1
+    WriteResults wsResults, allIDs, dict1, dict2, dictAdditional, additionalColumns1, tolerance
     
     ' Split results into Match Results and Error Results sheets
     SplitResults wsResults
@@ -282,7 +290,7 @@ Private Function GetUniqueIDs(dict1 As Object, dict2 As Object) As Collection
     Set GetUniqueIDs = allIDs
 End Function
 
-Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, dict1 As Object, dict2 As Object, dictAdditional As Object, additionalColumnsStr As String)
+Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, dict1 As Object, dict2 As Object, dictAdditional As Object, additionalColumnsStr As String, tolerance As Double)
     ' Parse additional column names
     Dim additionalColNames() As String
     Dim hasAdditionalCols As Boolean
@@ -355,7 +363,7 @@ Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, dict1 As 
         End If
         
         diff = total1 - total2
-        isMatch = (Abs(diff) < 0.01) ' Tolerance for floating point comparison
+        isMatch = (Abs(diff) < tolerance) ' Tolerance for floating point comparison
         
         ' Write to sheet in new order
         col = 1
