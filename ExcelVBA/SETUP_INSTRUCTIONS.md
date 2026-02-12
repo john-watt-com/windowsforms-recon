@@ -23,7 +23,11 @@ Rename/create the following worksheets (right-click sheet tabs):
 - **Sheet1** - Will hold data from first Excel file
 - **Sheet2** - Will hold data from second Excel file  
 - **Config** - Configuration settings
-- **Results** - Reconciliation output
+- **All Results** - Complete reconciliation output
+
+**Note:** The following sheets will be created automatically when you run reconciliation:
+- **Match Results** - Records where totals match (IsMatch = TRUE)
+- **Error Results** - Records where totals don't match (IsMatch = FALSE)
 
 ### 3. Set Up the Config Sheet
 
@@ -142,11 +146,17 @@ If you get errors about file access:
 
 3. **Run Reconciliation**:
    - Click "Run Reconciliation"
-   - View results in the Results tab
+   - View results in three tabs:
+     - **All Results**: Complete data with all records
+     - **Match Results**: Only matching records (no IsMatch/Difference columns)
+     - **Error Results**: Only mismatched records (includes Difference column)
 
 ### Results Explanation:
 
-Results are displayed as an Excel Table named "ReconResultsTable" with the following columns (in order):
+Results are displayed across three Excel worksheets:
+
+#### All Results Sheet
+Excel Table named "ReconResultsTable" with all reconciliation data:
 
 - **IsMatch**: TRUE if difference is < 0.01, FALSE otherwise (appears first for easy filtering)
 - **Difference**: Sheet1 Total - Sheet2 Total
@@ -157,10 +167,29 @@ Results are displayed as an Excel Table named "ReconResultsTable" with the follo
   - Shows values from the first occurrence of each ID in Sheet1
   - Useful for displaying descriptive fields like Region, Department, Customer Name, etc.
 
+#### Match Results Sheet
+Excel Table named "MatchResultsTable" with only matching records (IsMatch = TRUE):
+
+- Contains: **ID**, **Sheet1 Total**, **Sheet2 Total**, and any **Additional Columns**
+- **Excludes**: IsMatch and Difference columns (since all records match)
+- Clean view of reconciled data
+
+#### Error Results Sheet
+Excel Table named "ErrorResultsTable" with only mismatched records (IsMatch = FALSE):
+
+- **Difference**: Sheet1 Total - Sheet2 Total (shown first for quick review)
+- **ID**: The unique identifier
+- **Sheet1 Total**: Sum from Sheet1
+- **Sheet2 Total**: Sum from Sheet2
+- **Additional Columns**: Any specified additional columns
+- **Excludes**: IsMatch column (all are FALSE)
+- All rows highlighted in light red for visibility
+
 **Features:**
-- Rows with mismatches (IsMatch = FALSE) are highlighted in light red
-- Results are formatted as a Table for easy filtering and sorting
-- Click the dropdown arrows in the header to filter by IsMatch or any other column
+- All tables support filtering and sorting
+- Click dropdown arrows in headers to filter
+- Error Results are pre-highlighted in red
+- Each sheet can be used independently for reporting
 
 ## Input Requirements
 
@@ -189,7 +218,8 @@ Your Excel files must have:
 - Column names are case-sensitive and whitespace-sensitive
 
 ### "Required worksheets not found"
-- Ensure you have Sheet1, Sheet2, Config, and Results worksheets
+- Ensure you have Sheet1, Sheet2, and Config worksheets
+- The All Results, Match Results, and Error Results sheets will be created automatically
 - Names must match exactly (case-sensitive)
 
 ### Import button doesn't work
