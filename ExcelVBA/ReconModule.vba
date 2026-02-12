@@ -56,6 +56,10 @@ Public Sub RunReconciliation()
     detailSheet = Trim(UCase(GetConfigValue(wsConfig, "Detail Sheet")))
     additionalColumns2 = GetConfigValue(wsConfig, "Sheet2 Additional Columns")
     
+    ' Get sort order setting
+    Dim sortOrder As String
+    sortOrder = GetConfigValue(wsConfig, "Sort Order")
+    
     ' Build dictionaries of ID -> Total
     Set dict1 = BuildTotalsDictionary(ws1, idCol1, valueColumns1)
     Set dict2 = BuildTotalsDictionary(ws2, idCol2, valueColumns2)
@@ -76,7 +80,7 @@ Public Sub RunReconciliation()
     Set allIDs = GetUniqueIDs(dict1, dict2)
     
     ' Write results
-    WriteResults wsResults, allIDs, dict1, dict2, dictAdditional1, additionalColumns1, tolerance
+    WriteResults wsResults, allIDs, dict1, dict2, dictAdditional1, additionalColumns1, tolerance, sortOrder
     
     ' Split results into Match Results and Error Results sheets
     SplitResults wsResults, ws1, ws2, idCol1, idCol2, detailSheet, dictDetailRows, dict1, dict2, dictAdditional1, dictAdditional2, additionalColumns1, additionalColumns2
@@ -440,7 +444,7 @@ Private Function GetUniqueIDs(dict1 As Object, dict2 As Object) As Collection
     Set GetUniqueIDs = allIDs
 End Function
 
-Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, dict1 As Object, dict2 As Object, dictAdditional As Object, additionalColumnsStr As String, tolerance As Double)
+Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, dict1 As Object, dict2 As Object, dictAdditional As Object, additionalColumnsStr As String, tolerance As Double, sortOrder As String)
     ' Parse additional column names
     Dim additionalColNames() As String
     Dim hasAdditionalCols As Boolean
@@ -480,24 +484,20 @@ Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, dict1 As 
         .Interior.Color = RGB(200, 200, 200)
     End With
     
-    ' Sort IDs (convert to array first)
-    Dim sortedIDs() As String
-    ReDim sortedIDs(1 To allIDs.Count)
-    For i = 1 To allIDs.Count
-        sortedIDs(i) = allIDs(i)
-    Next i
-    QuickSort sortedIDs, LBound(sortedIDs), UBound(sortedIDs)
+    ' Build and sort row data
+    Dim rowData As Collection
+    Set rowData = New Collection
     
-    ' Write data rows
-    Dim row As Long, id As String
+    Dim id As String
     Dim total1 As Double, total2 As Double, diff As Double
     Dim isMatch As Boolean
     Dim additionalDict As Object
+    Dim rowDict As Object
     Dim j As Long
     
-    row = 2
-    For i = LBound(sortedIDs) To UBound(sortedIDs)
-        id = sortedIDs(i)
+    ' Build all row data
+    For i = 1 To allIDs.Count
+        id = allIDs(i)
         
         ' Get totals (default to 0 if not exists)
         If dict1.Exists(id) Then
@@ -513,32 +513,62 @@ Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, dict1 As 
         End If
         
         diff = total1 - total2
-        isMatch = (Abs(diff) < tolerance) ' Tolerance for floating point comparison
+        isMatch = (Abs(diff) < tolerance)
         
-        ' Write to sheet in new order
-        col = 1
-        wsResults.Cells(row, col).value = isMatch: col = col + 1
-        wsResults.Cells(row, col).value = diff: col = col + 1
-        wsResults.Cells(row, col).value = id: col = col + 1
-        wsResults.Cells(row, col).value = total1: col = col + 1
-        wsResults.Cells(row, col).value = total2: col = col + 1
+        ' Create row dictionary
+        Set rowDict = CreateObject("Scripting.Dictionary")
+        rowDict("IsMatch") = isMatch
+        rowDict("Difference") = diff
+        rowDict("ID") = id
+        rowDict("Sheet1 Total") = total1
+        rowDict("Sheet2 Total") = total2
         
-        ' Write additional columns
+        ' Add additional columns
         If hasAdditionalCols And dictAdditional.Exists(id) Then
             Set additionalDict = dictAdditional(id)
             For j = 0 To UBound(additionalColNames)
                 If additionalDict.Exists(additionalColNames(j)) Then
-                    wsResults.Cells(row, col).value = additionalDict(additionalColNames(j))
+                    rowDict(additionalColNames(j)) = additionalDict(additionalColNames(j))
+                Else
+                    rowDict(additionalColNames(j)) = ""
                 End If
-                col = col + 1
             Next j
         ElseIf hasAdditionalCols Then
-            ' Skip columns if no additional data
-            col = col + UBound(additionalColNames) + 1
+            For j = 0 To UBound(additionalColNames)
+                rowDict(additionalColNames(j)) = ""
+            Next j
+        End If
+        
+        rowData.Add rowDict
+    Next i
+    
+    ' Sort row data by specified columns
+    SortRowData rowData, sortOrder, wsResults
+    
+    ' Write sorted data rows
+    Dim row As Long
+    row = 2
+    For i = 1 To rowData.Count
+        Set rowDict = rowData(i)
+        
+        ' Write to sheet from row dictionary
+        col = 1
+        wsResults.Cells(row, col).value = rowDict("IsMatch"): col = col + 1
+        wsResults.Cells(row, col).value = rowDict("Difference"): col = col + 1
+        wsResults.Cells(row, col).value = rowDict("ID"): col = col + 1
+        wsResults.Cells(row, col).value = rowDict("Sheet1 Total"): col = col + 1
+        wsResults.Cells(row, col).value = rowDict("Sheet2 Total"): col = col + 1
+        
+        ' Write additional columns
+        If hasAdditionalCols Then
+            For j = 0 To UBound(additionalColNames)
+                wsResults.Cells(row, col).value = rowDict(additionalColNames(j))
+                col = col + 1
+            Next j
         End If
         
         ' Highlight non-matches
-        If Not isMatch Then
+        If Not rowDict("IsMatch") Then
             wsResults.Rows(row).Interior.Color = RGB(255, 200, 200)
         End If
         
@@ -613,36 +643,125 @@ Private Sub ClearResults()
     wsError.Cells.Clear
 End Sub
 
-Private Sub QuickSort(arr() As String, ByVal left As Long, ByVal right As Long)
-    ' Simple quicksort for string array
-    Dim i As Long, j As Long
-    Dim pivot As String, temp As String
+Private Sub SortRowData(rowData As Collection, sortOrder As String, wsResults As Worksheet)
+    ' Sort row data by specified columns
+    ' sortOrder format: "Column1,Column2 DESC,Column3" (can include ASC/DESC, default is ASC)
     
-    If left < right Then
-        pivot = arr((left + right) \ 2)
-        i = left
-        j = right
-        
-        Do While i <= j
-            Do While arr(i) < pivot
-                i = i + 1
-            Loop
-            Do While arr(j) > pivot
-                j = j - 1
-            Loop
-            If i <= j Then
-                temp = arr(i)
-                arr(i) = arr(j)
-                arr(j) = temp
-                i = i + 1
-                j = j - 1
-            End If
-        Loop
-        
-        If left < j Then QuickSort arr, left, j
-        If i < right Then QuickSort arr, i, right
+    ' If no sort order specified, sort by ID ascending (default)
+    If Len(Trim(sortOrder)) = 0 Then
+        sortOrder = "ID"
     End If
+    
+    ' Parse sort columns and directions
+    Dim sortSpecs() As String
+    sortSpecs = Split(sortOrder, ",")
+    
+    Dim sortColumns() As String
+    Dim sortDirections() As String
+    ReDim sortColumns(0 To UBound(sortSpecs))
+    ReDim sortDirections(0 To UBound(sortSpecs))
+    
+    Dim i As Long, spec As String, parts() As String
+    For i = 0 To UBound(sortSpecs)
+        spec = Trim(sortSpecs(i))
+        
+        ' Check for DESC keyword
+        If UCase(Right(spec, 5)) = " DESC" Then
+            sortColumns(i) = Trim(Left(spec, Len(spec) - 5))
+            sortDirections(i) = "DESC"
+        ElseIf UCase(Right(spec, 4)) = " ASC" Then
+            sortColumns(i) = Trim(Left(spec, Len(spec) - 4))
+            sortDirections(i) = "ASC"
+        Else
+            sortColumns(i) = spec
+            sortDirections(i) = "ASC" ' Default
+        End If
+    Next i
+    
+    ' Bubble sort (simple, works for typical result set sizes)
+    Dim swapped As Boolean, j As Long
+    Dim row1 As Object, row2 As Object
+    Dim compareResult As Integer
+    
+    Do
+        swapped = False
+        For i = 1 To rowData.Count - 1
+            Set row1 = rowData(i)
+            Set row2 = rowData(i + 1)
+            
+            ' Compare by sort columns in order
+            compareResult = CompareRows(row1, row2, sortColumns, sortDirections)
+            
+            If compareResult > 0 Then
+                ' Swap
+                rowData.Remove i + 1
+                rowData.Add row2, , i
+                swapped = True
+            End If
+        Next i
+    Loop While swapped
 End Sub
+
+Private Function CompareRows(row1 As Object, row2 As Object, sortColumns() As String, sortDirections() As String) As Integer
+    ' Compare two row dictionaries by multiple columns
+    ' Returns: -1 if row1 < row2, 0 if equal, 1 if row1 > row2
+    
+    Dim i As Long, colName As String
+    Dim val1 As Variant, val2 As Variant
+    Dim compareResult As Integer
+    
+    For i = 0 To UBound(sortColumns)
+        colName = sortColumns(i)
+        
+        ' Get values (handle missing keys)
+        If row1.Exists(colName) Then
+            val1 = row1(colName)
+        Else
+            val1 = ""
+        End If
+        
+        If row2.Exists(colName) Then
+            val2 = row2(colName)
+        Else
+            val2 = ""
+        End If
+        
+        ' Compare values
+        If IsNumeric(val1) And IsNumeric(val2) Then
+            ' Numeric comparison
+            If CDbl(val1) < CDbl(val2) Then
+                compareResult = -1
+            ElseIf CDbl(val1) > CDbl(val2) Then
+                compareResult = 1
+            Else
+                compareResult = 0
+            End If
+        Else
+            ' String comparison
+            If CStr(val1) < CStr(val2) Then
+                compareResult = -1
+            ElseIf CStr(val1) > CStr(val2) Then
+                compareResult = 1
+            Else
+                compareResult = 0
+            End If
+        End If
+        
+        ' Apply sort direction
+        If sortDirections(i) = "DESC" Then
+            compareResult = -compareResult
+        End If
+        
+        ' If not equal, return result; otherwise continue to next sort column
+        If compareResult <> 0 Then
+            CompareRows = compareResult
+            Exit Function
+        End If
+    Next i
+    
+    ' All columns equal
+    CompareRows = 0
+End Function
 
 ' Helper: Import external Excel file into a worksheet
 Public Sub ImportExcelFile(targetSheet As Worksheet)

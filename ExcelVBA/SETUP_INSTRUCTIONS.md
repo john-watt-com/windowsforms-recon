@@ -59,11 +59,13 @@ In the **Recon Config** worksheet, create a table named **"ReconConfigTable"**:
 | Tolerance | _(e.g., "0.01")_ | Maximum difference for matches (default: 0.01) |
 | Detail Sheet | _(e.g., "SHEET1" or "SHEET2")_ | Enable detail expansion mode (see Advanced Features) |
 | Sheet2 Additional Columns | _(e.g., "CustomerName,OrderDate")_ | Columns from Sheet2 (for detail expansion) |
+| Sort Order | _(e.g., "Difference DESC,ID")_ | Columns to sort results by (default: ID) |
 
 **Important Notes:**
 - Settings can be in any order
 - Setting names are case-insensitive
 - Use +/- prefixes in Value Columns: `+Debits,-Credits` to add Debits and subtract Credits
+- Use Sort Order to specify custom sorting: `Difference DESC,ID` sorts by Difference descending, then ID ascending
 - Omit optional settings if not needed (they'll use defaults)
 
 ### 4. Enable Developer Tab
@@ -284,6 +286,47 @@ You have order line items in Sheet1 and order totals in Sheet2:
 |------|-------------|---------------|----------|
 | **Aggregated** | _(blank)_ | 1 row per ID | Standard reconciliation |
 | **Detail Expansion** | SHEET1/SHEET2 | 1 row per detail row | Granular analysis, transformations |
+
+### Custom Sort Order
+
+**Purpose:** Control the order in which result rows appear by specifying one or more columns to sort by.
+
+**Configuration:**
+Set **Sort Order** in ReconConfigTable to a comma-separated list of columns with optional ASC/DESC:
+- `ColumnName` - Sort ascending (default)
+- `ColumnName ASC` - Sort ascending (explicit)
+- `ColumnName DESC` - Sort descending
+- Multiple columns: `Column1 DESC,Column2` - Multi-level sort
+
+**Examples:**
+
+**Sort by largest difference first:**
+```
+Setting: Sort Order
+Value: Difference DESC
+```
+
+**Sort by Region, then Difference descending:**
+```
+Setting: Sort Order
+Value: Region,Difference DESC
+```
+
+**Sort by Sheet1 Total descending, then ID:**
+```
+Setting: Sort Order
+Value: Sheet1 Total DESC,ID
+```
+
+**Available Sort Columns:**
+- `ID` - The identifier column
+- `Difference` - Calculated difference (Sheet1 Total - Sheet2 Total)
+- `Sheet1 Total` - Sum from Sheet1
+- `Sheet2 Total` - Sum from Sheet2
+- Any additional column name from Sheet1/Sheet2 Additional Columns
+
+**Default Behavior:**
+If Sort Order is omitted, results are sorted by **ID** in ascending order.
 
 ## Input Requirements
 
