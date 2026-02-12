@@ -4,9 +4,9 @@ VBA port of the C# Windows Forms Excel Reconciliation App. Compares two Excel fi
 
 ## Quick Start
 
-1. **Create workbook** with sheets: `Sheet1`, `Sheet2`, `Config`, `All Results`
+1. **Create workbook** with sheets: `Sheet1`, `Sheet2`, `Recon Config`, `All Results`
    - Note: `Match Results` and `Error Results` sheets are created automatically
-2. **Set up Recon Config sheet** with ID columns and value columns (see [CONFIG_EXAMPLE.md](CONFIG_EXAMPLE.md))
+2. **Set up Recon Config sheet** with a table named **"ReconConfigTable"** containing Setting and Value columns (see [CONFIG_EXAMPLE.md](CONFIG_EXAMPLE.md))
 3. **Import VBA code**:
    - Module: [ReconModule.vba](ReconModule.vba)
    - UserForm: [ReconForm.vba](ReconForm.vba)
@@ -55,7 +55,7 @@ Your Excel files must have:
 
 | C# App | VBA Version |
 |--------|-------------|
-| Interactive column selection UI | Manual config in Recon Config sheet |
+| Interactive column selection UI | Table-based config in Recon Config sheet |
 | Multiple worksheet tabs | Single workbook with named sheets |
 | Faster (external app) | Slower (runs in Excel) |
 

@@ -31,27 +31,40 @@ Rename/create the following worksheets (right-click sheet tabs):
 
 ### 3. Set Up the Recon Config Sheet
 
-In the **Recon Config** worksheet, set up the following:
+In the **Recon Config** worksheet, create a table named **"ReconConfigTable"**:
 
-| Row | Column A | Column B |
-|-----|----------|----------|
-| 1   | **Setting** | **Value** |
-| 2   | Sheet1 ID Column | _(enter column name, e.g., "CustomerID")_ |
-| 3   | Sheet2 ID Column | _(enter column name, e.g., "CustomerID")_ |
-| 4   | Sheet1 Value Columns | _(comma-separated, e.g., "Amount1,Amount2" or "+Debits,-Credits")_ |
-| 5   | Sheet2 Value Columns | _(comma-separated, e.g., "TotalAmount")_ |
-| 6   | Sheet1 Additional Columns | _(optional: comma-separated columns to display, e.g., "Region,Department")_ |
-| 7   | Tolerance | _(optional: numeric value, e.g., "0.01". Defaults to 0.01 if not specified)_ |
-| 8   | Detail Sheet | _(optional: "SHEET1" or "SHEET2" for detail expansion mode)_ |
-| 9   | Sheet2 Additional Columns | _(optional: comma-separated columns from Sheet2, only used with detail expansion)_ |
+1. Add headers in row 1: **Setting** (Column A) and **Value** (Column B)
+2. Add your configuration settings starting in row 2
+3. Select the range including headers and data (e.g., A1:B6)
+4. Insert → Table (or Ctrl+T)
+5. Ensure "My table has headers" is checked
+6. Click OK
+7. With the table selected, go to Table Design tab
+8. Change the table name to **ReconConfigTable**
 
-**Notes:** 
-- **Row 2-3 (ID Columns)**: Required. Column names must match exactly (case-sensitive).
-- **Row 4-5 (Value Columns)**: Required. Support +/- prefixes: use `+` to add columns, `-` to subtract them (e.g., "+Debits,-Credits"). No prefix defaults to addition.
-- **Row 6 (Sheet1 Additional Columns)**: Optional. Columns from Sheet1 to include in results.
-- **Row 7 (Tolerance)**: Optional. Maximum difference for matches. Default is 0.01.
-- **Row 8 (Detail Sheet)**: Optional. Leave blank for aggregated mode (default). Set to "SHEET1" or "SHEET2" for detail expansion mode (see Advanced Features below).
-- **Row 9 (Sheet2 Additional Columns)**: Optional. Only used with detail expansion mode. Columns from Sheet2 to join to detail rows.
+**Required Settings:**
+
+| Setting | Value | Description |
+|---------|-------|-------------|
+| Sheet1 ID Column | _(e.g., "CustomerID")_ | Column name for matching records in Sheet1 |
+| Sheet2 ID Column | _(e.g., "CustomerID")_ | Column name for matching records in Sheet2 |
+| Sheet1 Value Columns | _(e.g., "Amount" or "+Debits,-Credits")_ | Comma-separated columns to sum from Sheet1 |
+| Sheet2 Value Columns | _(e.g., "TotalAmount")_ | Comma-separated columns to sum from Sheet2 |
+
+**Optional Settings:**
+
+| Setting | Value | Description |
+|---------|-------|-------------|
+| Sheet1 Additional Columns | _(e.g., "Region,Department")_ | Columns from Sheet1 to include in results |
+| Tolerance | _(e.g., "0.01")_ | Maximum difference for matches (default: 0.01) |
+| Detail Sheet | _(e.g., "SHEET1" or "SHEET2")_ | Enable detail expansion mode (see Advanced Features) |
+| Sheet2 Additional Columns | _(e.g., "CustomerName,OrderDate")_ | Columns from Sheet2 (for detail expansion) |
+
+**Important Notes:**
+- Settings can be in any order
+- Setting names are case-insensitive
+- Use +/- prefixes in Value Columns: `+Debits,-Credits` to add Debits and subtract Credits
+- Omit optional settings if not needed (they'll use defaults)
 
 ### 4. Enable Developer Tab
 
@@ -149,9 +162,10 @@ If you get errors about file access:
 ### Basic Workflow:
 
 1. **Configure** (Recon Config sheet):
-   - Enter ID column names for both sheets (B2, B3)
-   - Enter value column names (B4, B5) as comma-separated lists
-   - Optionally enter additional columns to display from Sheet1 (B6)
+   - Create a table named "ReconConfigTable" with Setting and Value columns
+   - Add required settings: Sheet1 ID Column, Sheet2 ID Column, Sheet1 Value Columns, Sheet2 Value Columns
+   - Add optional settings as needed (Tolerance, Additional Columns, Detail Sheet, etc.)
+   - Settings can be in any order
 
 2. **Load Data**:
    - Click "Load Worksheet 1" and select first Excel file
@@ -239,17 +253,18 @@ You have order line items in Sheet1 and order totals in Sheet2:
 | ORD001 | Acme Corp | 2024-01-15 | 150 |
 | ORD002 | Beta Inc | 2024-01-16 | 150 |
 
-**Recon Config Setup:**
-```
-Row 2: OrderID
-Row 3: OrderID
-Row 4: LineAmount
-Row 5: TotalAmount
-Row 6: LineNumber,Product,Quantity
-Row 7: 0.01
-Row 8: SHEET1
-Row 9: CustomerName,OrderDate
-```
+**ReconConfigTable:**
+
+| Setting | Value |
+|---------|-------|
+| Sheet1 ID Column | OrderID |
+| Sheet2 ID Column | OrderID |
+| Sheet1 Value Columns | LineAmount |
+| Sheet2 Value Columns | TotalAmount |
+| Sheet1 Additional Columns | LineNumber,Product,Quantity |
+| Tolerance | 0.01 |
+| Detail Sheet | SHEET1 |
+| Sheet2 Additional Columns | CustomerName,OrderDate |
 
 **Match Results Output (Detail Expansion):**
 | ID | LineNumber | Product | Quantity | Sheet1 Total | Sheet2 Total | CustomerName | OrderDate |
@@ -292,8 +307,13 @@ Your Excel files must have:
 
 ## Troubleshooting
 
+### "ReconConfigTable not found"
+- Your Recon Config sheet must have a table named exactly "ReconConfigTable"
+- Select your config data (including headers), press Ctrl+T to create a table
+- Rename the table to "ReconConfigTable" in Table Design tab
+
 ### "Column not found" error
-- Check that column names in Recon Config sheet exactly match headers in your data files
+- Check that column names in Recon Config table exactly match headers in your data files
 - Column names are case-sensitive and whitespace-sensitive
 
 ### "Required worksheets not found"
