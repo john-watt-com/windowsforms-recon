@@ -22,16 +22,16 @@ Rename/create the following worksheets (right-click sheet tabs):
 
 - **Sheet1** - Will hold data from first Excel file
 - **Sheet2** - Will hold data from second Excel file  
-- **Config** - Configuration settings
+- **Recon Config** - Configuration settings
 - **All Results** - Complete reconciliation output
 
 **Note:** The following sheets will be created automatically when you run reconciliation:
 - **Match Results** - Records where totals match (IsMatch = TRUE)
 - **Error Results** - Records where totals don't match (IsMatch = FALSE)
 
-### 3. Set Up the Config Sheet
+### 3. Set Up the Recon Config Sheet
 
-In the **Config** worksheet, set up the following:
+In the **Recon Config** worksheet, set up the following:
 
 | Row | Column A | Column B |
 |-----|----------|----------|
@@ -107,7 +107,7 @@ If you don't see the Developer tab in Excel:
 - Click Run
 
 **Option 2: Add a Button to the Worksheet**
-1. Go to any worksheet (e.g., Config sheet)
+1. Go to any worksheet (e.g., Recon Config sheet)
 2. Developer tab → Insert → Button (Form Control)
 3. Draw a button on the sheet
 4. In the "Assign Macro" dialog, select `ShowReconForm`
@@ -139,7 +139,7 @@ If you get errors about file access:
 
 ### Basic Workflow:
 
-1. **Configure** (Config sheet):
+1. **Configure** (Recon Config sheet):
    - Enter ID column names for both sheets (B2, B3)
    - Enter value column names (B4, B5) as comma-separated lists
    - Optionally enter additional columns to display from Sheet1 (B6)
@@ -212,18 +212,18 @@ Your Excel files must have:
 |---------|--------|-------------|
 | File Loading | Windows Forms OpenFileDialog | Excel FileDialog |
 | UI | Separate tabs with DataGridViews | Excel worksheets |
-| Configuration | ComboBoxes and CheckedListBoxes | Config sheet cells |
-| Column Selection | Interactive UI controls | Manual entry in Config sheet |
+| Configuration | ComboBoxes and CheckedListBoxes | Recon Config sheet cells |
+| Column Selection | Interactive UI controls | Manual entry in Recon Config sheet |
 | Performance | Faster for large files | Slower for 10,000+ rows |
 
 ## Troubleshooting
 
 ### "Column not found" error
-- Check that column names in Config sheet exactly match headers in your data files
+- Check that column names in Recon Config sheet exactly match headers in your data files
 - Column names are case-sensitive and whitespace-sensitive
 
 ### "Required worksheets not found"
-- Ensure you have Sheet1, Sheet2, and Config worksheets
+- Ensure you have Sheet1, Sheet2, and Recon Config worksheets
 - The All Results, Match Results, and Error Results sheets will be created automatically
 - Names must match exactly (case-sensitive)
 

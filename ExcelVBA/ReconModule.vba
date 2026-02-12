@@ -29,7 +29,7 @@ Public Sub RunReconciliation()
     Set ws1 = ThisWorkbook.Worksheets("Sheet1")
     Set ws2 = ThisWorkbook.Worksheets("Sheet2")
     Set wsResults = GetOrCreateWorksheet("All Results")
-    Set wsConfig = ThisWorkbook.Worksheets("Config")
+    Set wsConfig = ThisWorkbook.Worksheets("Recon Config")
     
     ' Get ID columns and value columns from config sheet
     idCol1 = wsConfig.Range("B2").value
@@ -65,22 +65,22 @@ Private Function ValidateSetup() As Boolean
     Dim ws1 As Worksheet, ws2 As Worksheet, wsConfig As Worksheet
     Set ws1 = ThisWorkbook.Worksheets("Sheet1")
     Set ws2 = ThisWorkbook.Worksheets("Sheet2")
-    Set wsConfig = ThisWorkbook.Worksheets("Config")
+    Set wsConfig = ThisWorkbook.Worksheets("Recon Config")
     On Error GoTo 0
     
     If ws1 Is Nothing Or ws2 Is Nothing Or wsConfig Is Nothing Then
-        MsgBox "Required worksheets not found. Ensure 'Sheet1', 'Sheet2', and 'Config' exist.", vbCritical, "Error"
+        MsgBox "Required worksheets not found. Ensure 'Sheet1', 'Sheet2', and 'Recon Config' exist.", vbCritical, "Error"
         Exit Function
     End If
     
     ' Check configuration is filled
     If Len(wsConfig.Range("B2").value) = 0 Or Len(wsConfig.Range("B3").value) = 0 Then
-        MsgBox "Please specify ID columns in Config sheet.", vbCritical, "Error"
+        MsgBox "Please specify ID columns in Recon Config sheet.", vbCritical, "Error"
         Exit Function
     End If
     
     If Len(wsConfig.Range("B4").value) = 0 Or Len(wsConfig.Range("B5").value) = 0 Then
-        MsgBox "Please specify value columns in Config sheet.", vbCritical, "Error"
+        MsgBox "Please specify value columns in Recon Config sheet.", vbCritical, "Error"
         Exit Function
     End If
     
@@ -111,15 +111,32 @@ Private Function BuildTotalsDictionary(ws As Worksheet, idColumnName As String, 
     Dim valueColNames() As String
     valueColNames = Split(valueColumnsStr, ",")
     
-    ' Find value column indexes
+    ' Find value column indexes and operations (+ or -)
     Dim valueColIndexes() As Long
+    Dim valueColOperations() As String
     ReDim valueColIndexes(0 To UBound(valueColNames))
+    ReDim valueColOperations(0 To UBound(valueColNames))
     Dim i As Long
+    Dim colName As String
+    Dim operation As String
+    
     For i = 0 To UBound(valueColNames)
-        valueColNames(i) = Trim(valueColNames(i))
-        valueColIndexes(i) = FindColumnIndex(ws, valueColNames(i))
+        colName = Trim(valueColNames(i))
+        
+        ' Check for leading + or - sign
+        If Left(colName, 1) = "+" Or Left(colName, 1) = "-" Then
+            operation = Left(colName, 1)
+            colName = Trim(Mid(colName, 2))  ' Remove the sign
+        Else
+            operation = "+"  ' Default to addition for backward compatibility
+        End If
+        
+        valueColNames(i) = colName
+        valueColOperations(i) = operation
+        valueColIndexes(i) = FindColumnIndex(ws, colName)
+        
         If valueColIndexes(i) = 0 Then
-            MsgBox "Column '" & valueColNames(i) & "' not found in " & ws.Name, vbCritical, "Error"
+            MsgBox "Column '" & colName & "' not found in " & ws.Name, vbCritical, "Error"
             Set BuildTotalsDictionary = dict
             Exit Function
         End If
@@ -136,12 +153,16 @@ Private Function BuildTotalsDictionary(ws As Worksheet, idColumnName As String, 
         ' Skip blank IDs
         If Len(id) = 0 Then GoTo NextRow
         
-        ' Sum value columns for this row
+        ' Sum value columns for this row (applying + or - operations)
         total = 0
         For i = 0 To UBound(valueColIndexes)
             If IsNumeric(ws.Cells(row, valueColIndexes(i)).value) Then
                 value = CDbl(ws.Cells(row, valueColIndexes(i)).value)
-                total = total + value
+                If valueColOperations(i) = "-" Then
+                    total = total - value
+                Else
+                    total = total + value
+                End If
             End If
         Next i
         
