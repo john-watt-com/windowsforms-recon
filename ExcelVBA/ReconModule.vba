@@ -4,6 +4,21 @@ Option Explicit
 ' Ported from C# WindowsForms ExcelReconApp
 
 Public Sub RunReconciliation()
+    ' Variable declarations
+    Dim ws1 As Worksheet
+    Dim ws2 As Worksheet
+    Dim wsResults As Worksheet
+    Dim wsConfig As Worksheet
+    Dim idCol1 As String
+    Dim idCol2 As String
+    Dim valueColumns1 As String
+    Dim valueColumns2 As String
+    Dim additionalColumns1 As String
+    Dim dict1 As Object
+    Dim dict2 As Object
+    Dim dictAdditional As Object
+    Dim allIDs As Collection
+    
     ' Validate setup
     If Not ValidateSetup() Then Exit Sub
     
@@ -11,34 +26,26 @@ Public Sub RunReconciliation()
     ClearResults
     
     ' Get configuration
-    Dim ws1 As Worksheet, ws2 As Worksheet, wsResults As Worksheet, wsConfig As Worksheet
     Set ws1 = ThisWorkbook.Worksheets("Sheet1")
     Set ws2 = ThisWorkbook.Worksheets("Sheet2")
     Set wsResults = GetOrCreateWorksheet("All Results")
     Set wsConfig = ThisWorkbook.Worksheets("Config")
     
     ' Get ID columns and value columns from config sheet
-    Dim idCol1 As String, idCol2 As String
-    Dim valueColumns1 As String, valueColumns2 As String
-    Dim additionalColumns1 As String
-    
-    idCol1 = wsConfig.Range("B2").Value
-    idCol2 = wsConfig.Range("B3").Value
-    valueColumns1 = wsConfig.Range("B4").Value ' Comma-separated list
-    valueColumns2 = wsConfig.Range("B5").Value ' Comma-separated list
-    additionalColumns1 = wsConfig.Range("B6").Value ' Comma-separated list (optional)
+    idCol1 = wsConfig.Range("B2").value
+    idCol2 = wsConfig.Range("B3").value
+    valueColumns1 = wsConfig.Range("B4").value
+    valueColumns2 = wsConfig.Range("B5").value
+    additionalColumns1 = wsConfig.Range("B6").value
     
     ' Build dictionaries of ID -> Total
-    Dim dict1 As Object, dict2 As Object
     Set dict1 = BuildTotalsDictionary(ws1, idCol1, valueColumns1)
     Set dict2 = BuildTotalsDictionary(ws2, idCol2, valueColumns2)
     
     ' Build dictionary of ID -> first row additional column values
-    Dim dictAdditional As Object
     Set dictAdditional = BuildAdditionalColumnsDictionary(ws1, idCol1, additionalColumns1)
     
     ' Get all unique IDs from both sheets
-    Dim allIDs As Collection
     Set allIDs = GetUniqueIDs(dict1, dict2)
     
     ' Write results
@@ -67,18 +74,18 @@ Private Function ValidateSetup() As Boolean
     End If
     
     ' Check configuration is filled
-    If Len(wsConfig.Range("B2").Value) = 0 Or Len(wsConfig.Range("B3").Value) = 0 Then
+    If Len(wsConfig.Range("B2").value) = 0 Or Len(wsConfig.Range("B3").value) = 0 Then
         MsgBox "Please specify ID columns in Config sheet.", vbCritical, "Error"
         Exit Function
     End If
     
-    If Len(wsConfig.Range("B4").Value) = 0 Or Len(wsConfig.Range("B5").Value) = 0 Then
+    If Len(wsConfig.Range("B4").value) = 0 Or Len(wsConfig.Range("B5").value) = 0 Then
         MsgBox "Please specify value columns in Config sheet.", vbCritical, "Error"
         Exit Function
     End If
     
     ' Check data exists
-    If ws1.Cells(2, 1).Value = "" Or ws2.Cells(2, 1).Value = "" Then
+    If ws1.Cells(2, 1).value = "" Or ws2.Cells(2, 1).value = "" Then
         MsgBox "Please load data into Sheet1 and Sheet2.", vbCritical, "Error"
         Exit Function
     End If
@@ -120,11 +127,11 @@ Private Function BuildTotalsDictionary(ws As Worksheet, idColumnName As String, 
     
     ' Loop through data rows (starting from row 2)
     Dim lastRow As Long
-    lastRow = ws.Cells(ws.Rows.Count, idColIndex).End(xlUp).Row
+    lastRow = ws.Cells(ws.Rows.Count, idColIndex).End(xlUp).row
     
     Dim row As Long, id As String, total As Double, value As Double
     For row = 2 To lastRow
-        id = Trim(CStr(ws.Cells(row, idColIndex).Value))
+        id = Trim(CStr(ws.Cells(row, idColIndex).value))
         
         ' Skip blank IDs
         If Len(id) = 0 Then GoTo NextRow
@@ -132,8 +139,8 @@ Private Function BuildTotalsDictionary(ws As Worksheet, idColumnName As String, 
         ' Sum value columns for this row
         total = 0
         For i = 0 To UBound(valueColIndexes)
-            If IsNumeric(ws.Cells(row, valueColIndexes(i)).Value) Then
-                value = CDbl(ws.Cells(row, valueColIndexes(i)).Value)
+            If IsNumeric(ws.Cells(row, valueColIndexes(i)).value) Then
+                value = CDbl(ws.Cells(row, valueColIndexes(i)).value)
                 total = total + value
             End If
         Next i
@@ -191,13 +198,13 @@ Private Function BuildAdditionalColumnsDictionary(ws As Worksheet, idColumnName 
     
     ' Loop through data rows (starting from row 2)
     Dim lastRow As Long
-    lastRow = ws.Cells(ws.Rows.Count, idColIndex).End(xlUp).Row
+    lastRow = ws.Cells(ws.Rows.Count, idColIndex).End(xlUp).row
     
     Dim row As Long, id As String
     Dim additionalDict As Object
     
     For row = 2 To lastRow
-        id = Trim(CStr(ws.Cells(row, idColIndex).Value))
+        id = Trim(CStr(ws.Cells(row, idColIndex).value))
         
         ' Skip blank IDs
         If Len(id) = 0 Then GoTo NextRowAdditional
@@ -208,7 +215,7 @@ Private Function BuildAdditionalColumnsDictionary(ws As Worksheet, idColumnName 
             
             ' Store values from additional columns
             For i = 0 To UBound(additionalColIndexes)
-                additionalDict.Add additionalColNames(i), ws.Cells(row, additionalColIndexes(i)).Value
+                additionalDict.Add additionalColNames(i), ws.Cells(row, additionalColIndexes(i)).value
             Next i
             
             dict.Add id, additionalDict
@@ -227,7 +234,7 @@ Private Function FindColumnIndex(ws As Worksheet, columnName As String) As Long
     lastCol = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
     
     For col = 1 To lastCol
-        If Trim(CStr(ws.Cells(1, col).Value)) = Trim(columnName) Then
+        If Trim(CStr(ws.Cells(1, col).value)) = Trim(columnName) Then
             FindColumnIndex = col
             Exit Function
         End If
@@ -271,16 +278,16 @@ Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, dict1 As 
     ' Write header - new order: IsMatch, Difference, ID, Sheet1 Total, Sheet2 Total, then additional columns
     Dim col As Long
     col = 1
-    wsResults.Cells(1, col).Value = "IsMatch": col = col + 1
-    wsResults.Cells(1, col).Value = "Difference": col = col + 1
-    wsResults.Cells(1, col).Value = "ID": col = col + 1
-    wsResults.Cells(1, col).Value = "Sheet1 Total": col = col + 1
-    wsResults.Cells(1, col).Value = "Sheet2 Total": col = col + 1
+    wsResults.Cells(1, col).value = "IsMatch": col = col + 1
+    wsResults.Cells(1, col).value = "Difference": col = col + 1
+    wsResults.Cells(1, col).value = "ID": col = col + 1
+    wsResults.Cells(1, col).value = "Sheet1 Total": col = col + 1
+    wsResults.Cells(1, col).value = "Sheet2 Total": col = col + 1
     
     ' Add additional column headers
     If hasAdditionalCols Then
         For i = 0 To UBound(additionalColNames)
-            wsResults.Cells(1, col).Value = additionalColNames(i)
+            wsResults.Cells(1, col).value = additionalColNames(i)
             col = col + 1
         Next i
     End If
@@ -331,18 +338,18 @@ Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, dict1 As 
         
         ' Write to sheet in new order
         col = 1
-        wsResults.Cells(row, col).Value = isMatch: col = col + 1
-        wsResults.Cells(row, col).Value = diff: col = col + 1
-        wsResults.Cells(row, col).Value = id: col = col + 1
-        wsResults.Cells(row, col).Value = total1: col = col + 1
-        wsResults.Cells(row, col).Value = total2: col = col + 1
+        wsResults.Cells(row, col).value = isMatch: col = col + 1
+        wsResults.Cells(row, col).value = diff: col = col + 1
+        wsResults.Cells(row, col).value = id: col = col + 1
+        wsResults.Cells(row, col).value = total1: col = col + 1
+        wsResults.Cells(row, col).value = total2: col = col + 1
         
         ' Write additional columns
         If hasAdditionalCols And dictAdditional.Exists(id) Then
             Set additionalDict = dictAdditional(id)
             For j = 0 To UBound(additionalColNames)
                 If additionalDict.Exists(additionalColNames(j)) Then
-                    wsResults.Cells(row, col).Value = additionalDict(additionalColNames(j))
+                    wsResults.Cells(row, col).value = additionalDict(additionalColNames(j))
                 End If
                 col = col + 1
             Next j
@@ -518,9 +525,9 @@ Public Sub RunTransform()
     Dim configRow As Long
     configRow = 2 ' Row with transform name, source, and target
     
-    transformName = Trim(CStr(wsTransformConfig.Cells(configRow, 1).Value))
-    sourceSheetName = Trim(CStr(wsTransformConfig.Cells(configRow, 2).Value))
-    targetSheetName = Trim(CStr(wsTransformConfig.Cells(configRow, 3).Value))
+    transformName = Trim(CStr(wsTransformConfig.Cells(configRow, 1).value))
+    sourceSheetName = Trim(CStr(wsTransformConfig.Cells(configRow, 2).value))
+    targetSheetName = Trim(CStr(wsTransformConfig.Cells(configRow, 3).value))
     
     If Len(transformName) = 0 Or Len(sourceSheetName) = 0 Or Len(targetSheetName) = 0 Then
         MsgBox "Transform configuration incomplete. Check Transform Config sheet rows 2 (Name, Source Sheet, Target Sheet).", vbCritical, "Error"
@@ -549,21 +556,21 @@ Public Sub RunTransform()
     
     Dim row As Long
     row = 5
-    Do While Len(Trim(CStr(wsTransformConfig.Cells(row, 1).Value))) > 0
+    Do While Len(Trim(CStr(wsTransformConfig.Cells(row, 1).value))) > 0
         Dim colDef As Object
         Set colDef = CreateObject("Scripting.Dictionary")
         
-        colDef("Order") = CLng(wsTransformConfig.Cells(row, 1).Value)
-        colDef("TargetColumn") = Trim(CStr(wsTransformConfig.Cells(row, 2).Value))
-        colDef("Type") = Trim(UCase(CStr(wsTransformConfig.Cells(row, 3).Value)))
+        colDef("Order") = CLng(wsTransformConfig.Cells(row, 1).value)
+        colDef("TargetColumn") = Trim(CStr(wsTransformConfig.Cells(row, 2).value))
+        colDef("Type") = Trim(UCase(CStr(wsTransformConfig.Cells(row, 3).value)))
         
         ' Read source as text/value
         Dim sourceValue As String
-        sourceValue = Trim(CStr(wsTransformConfig.Cells(row, 4).Value))
+        sourceValue = Trim(CStr(wsTransformConfig.Cells(row, 4).value))
         
         ' For FORMULA type, ensure it starts with =
         If colDef("Type") = "FORMULA" Then
-            If Left(sourceValue, 1) <> "=" Then
+            If left(sourceValue, 1) <> "=" Then
                 sourceValue = "=" & sourceValue
             End If
         End If
@@ -600,7 +607,7 @@ Private Sub ApplyTransformation(wsSource As Worksheet, wsTarget As Worksheet, co
     
     For Each colDef In columnDefs
         col = colDef("Order")
-        wsTarget.Cells(1, col).Value = colDef("TargetColumn")
+        wsTarget.Cells(1, col).value = colDef("TargetColumn")
     Next colDef
     
     ' Determine source data range
@@ -631,13 +638,13 @@ Private Sub ApplyTransformation(wsSource As Worksheet, wsTarget As Worksheet, co
                         If wsSource.Cells(sourceRow, sourceColIndex).HasFormula Then
                             wsTarget.Cells(targetRow, col).Formula = wsSource.Cells(sourceRow, sourceColIndex).Formula
                         Else
-                            wsTarget.Cells(targetRow, col).Value = wsSource.Cells(sourceRow, sourceColIndex).Value
+                            wsTarget.Cells(targetRow, col).value = wsSource.Cells(sourceRow, sourceColIndex).value
                         End If
                     End If
                     
                 Case "STATIC"
                     ' Static value - same for all rows
-                    wsTarget.Cells(targetRow, col).Value = colDef("Source")
+                    wsTarget.Cells(targetRow, col).value = colDef("Source")
                     
                 Case "FORMULA"
                     ' Skip for now - will add after creating table
@@ -726,16 +733,16 @@ Private Sub SplitResults(wsAllResults As Worksheet)
     Dim col As Long, matchCol As Long
     matchCol = 1
     For col = idCol To lastCol
-        wsMatch.Cells(1, matchCol).Value = wsAllResults.Cells(1, col).Value
+        wsMatch.Cells(1, matchCol).value = wsAllResults.Cells(1, col).value
         matchCol = matchCol + 1
     Next col
     
     ' Copy headers for Error Results (skip IsMatch only, keep Difference)
     Dim errorCol As Long
     errorCol = 1
-    wsError.Cells(1, errorCol).Value = "Difference": errorCol = errorCol + 1
+    wsError.Cells(1, errorCol).value = "Difference": errorCol = errorCol + 1
     For col = idCol To lastCol
-        wsError.Cells(1, errorCol).Value = wsAllResults.Cells(1, col).Value
+        wsError.Cells(1, errorCol).value = wsAllResults.Cells(1, col).value
         errorCol = errorCol + 1
     Next col
     
@@ -746,23 +753,23 @@ Private Sub SplitResults(wsAllResults As Worksheet)
     errorRow = 2
     
     For row = 2 To tblAll.Range.Rows.Count
-        isMatch = wsAllResults.Cells(row, isMatchCol).Value
+        isMatch = wsAllResults.Cells(row, isMatchCol).value
         
         If isMatch Then
             ' Copy to Match Results (skip IsMatch and Difference columns)
             matchCol = 1
             For col = idCol To lastCol
-                wsMatch.Cells(matchRow, matchCol).Value = wsAllResults.Cells(row, col).Value
+                wsMatch.Cells(matchRow, matchCol).value = wsAllResults.Cells(row, col).value
                 matchCol = matchCol + 1
             Next col
             matchRow = matchRow + 1
         Else
             ' Copy to Error Results (skip IsMatch, keep Difference)
             errorCol = 1
-            wsError.Cells(errorRow, errorCol).Value = wsAllResults.Cells(row, diffCol).Value
+            wsError.Cells(errorRow, errorCol).value = wsAllResults.Cells(row, diffCol).value
             errorCol = errorCol + 1
             For col = idCol To lastCol
-                wsError.Cells(errorRow, errorCol).Value = wsAllResults.Cells(row, col).Value
+                wsError.Cells(errorRow, errorCol).value = wsAllResults.Cells(row, col).value
                 errorCol = errorCol + 1
             Next col
             
@@ -830,3 +837,6 @@ Private Sub SplitResults(wsAllResults As Worksheet)
         wsError.Columns("A:" & ColLetter(errorLastCol)).AutoFit
     End If
 End Sub
+
+
+
