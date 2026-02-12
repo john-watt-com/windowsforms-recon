@@ -42,8 +42,9 @@ Create a table named **"ReconConfigTable"** with these columns:
 **Notes:**
 - Settings can be in any order
 - Setting names are case-insensitive
-- Optional settings (Tolerance, Detail Sheet, Sheet2 Additional Columns) can be omitted
+- Optional settings (Tolerance, Detail Sheet, Sheet2 Additional Columns, Sort Order) can be omitted
 - If Tolerance is omitted or invalid, defaults to 0.01
+- If Sort Order is omitted, results are sorted by ID ascending
 
 ## What This Does
 
@@ -213,3 +214,49 @@ With `Detail Sheet = SHEET1` and `Sheet2 Additional Columns = CustomerName,Order
 | **Detail Expansion** | `SHEET1` or `SHEET2` | 1 row per detail row with joined data | Detail-level analysis after reconciliation |
 
 **Error Results** are always aggregated (1 row per ID) regardless of mode.
+
+---
+
+## Sort Order Configuration
+
+By default, results are sorted by ID in ascending order. You can customize the sort order using the **Sort Order** setting.
+
+### Sort Order Format
+
+Comma-separated list of column names with optional ASC/DESC:
+- `ColumnName` - Sort ascending (default)
+- `ColumnName ASC` - Sort ascending (explicit)
+- `ColumnName DESC` - Sort descending
+- `Column1,Column2 DESC,Column3` - Multi-level sort
+
+### Examples
+
+**Sort by Difference (largest first), then ID:**
+```
+Setting: Sort Order
+Value: Difference DESC,ID
+```
+
+**Sort by Region, then by Difference:**
+```
+Setting: Sort Order
+Value: Region,Difference
+```
+
+**Sort by Sheet1 Total descending:**
+```
+Setting: Sort Order
+Value: Sheet1 Total DESC
+```
+
+**Default (if Sort Order omitted):**
+- Results sorted by ID ascending
+
+### Available Sort Columns
+
+You can sort by any column in the results:
+- `ID` - The identifier column
+- `Difference` - Sheet1 Total - Sheet2 Total
+- `Sheet1 Total` - Sum from Sheet1
+- `Sheet2 Total` - Sum from Sheet2
+- Any additional column name from Sheet1 Additional Columns
