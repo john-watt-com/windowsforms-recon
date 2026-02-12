@@ -1,5 +1,13 @@
 # Recon Config Sheet Example
 
+## Important: Configuration is Now Table-Based
+
+The Recon Config sheet must contain an Excel table named **"ReconConfigTable"** with two columns:
+- **Setting** - The name of the configuration setting
+- **Value** - The value for that setting
+
+Settings can be in any order. The tool looks up settings by name (case-insensitive).
+
 ## Basic Example
 
 If your Excel files look like this:
@@ -19,17 +27,23 @@ If your Excel files look like this:
 ## Your Recon Config Sheet Should Look Like:
 
 ### Aggregated Mode (Default)
-| A | B |
-|---|---|
-| **Setting** | **Value** |
+
+Create a table named **"ReconConfigTable"** with these columns:
+
+| Setting | Value |
+|---------|-------|
 | Sheet1 ID Column | CustomerID |
 | Sheet2 ID Column | CustomerID |
 | Sheet1 Value Columns | Sales,Tax |
 | Sheet2 Value Columns | TotalRevenue |
 | Sheet1 Additional Columns | Region |
 | Tolerance | 0.01 |
-| Detail Sheet | _(blank)_ |
-| Sheet2 Additional Columns | _(blank)_ |
+
+**Notes:**
+- Settings can be in any order
+- Setting names are case-insensitive
+- Optional settings (Tolerance, Detail Sheet, Sheet2 Additional Columns) can be omitted
+- If Tolerance is omitted or invalid, defaults to 0.01
 
 ## What This Does
 
@@ -139,11 +153,10 @@ Sometimes one sheet has **detail-level data** (multiple rows per ID) while the o
 
 ### Configuration for Detail Expansion
 
-Add these settings to your Recon Config:
+Add these settings to your ReconConfigTable:
 
-| A | B |
-|---|---|
-| **Setting** | **Value** |
+| Setting | Value |
+|---------|-------|
 | Sheet1 ID Column | OrderID |
 | Sheet2 ID Column | OrderID |
 | Sheet1 Value Columns | LineAmount |
@@ -154,11 +167,11 @@ Add these settings to your Recon Config:
 | Sheet2 Additional Columns | CustomerName,OrderDate |
 
 **Key Settings:**
-- **Detail Sheet (Row 8)**: Specify which sheet has the detail-level data
+- **Detail Sheet**: Specify which sheet has the detail-level data
   - Use `SHEET1` if Sheet1 has multiple rows per ID
   - Use `SHEET2` if Sheet2 has multiple rows per ID
-  - Leave blank for standard aggregated mode
-- **Sheet2 Additional Columns (Row 9)**: Comma-separated list of columns from Sheet2 to include in results
+  - Omit this setting for standard aggregated mode
+- **Sheet2 Additional Columns**: Comma-separated list of columns from Sheet2 to include in results
   - Only needed when using detail expansion
   - These columns are joined from the summary sheet to each detail row
 

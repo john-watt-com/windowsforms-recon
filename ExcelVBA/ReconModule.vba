@@ -36,23 +36,25 @@ Public Sub RunReconciliation()
     Set wsResults = GetOrCreateWorksheet("All Results")
     Set wsConfig = ThisWorkbook.Worksheets("Recon Config")
     
-    ' Get ID columns and value columns from config sheet
-    idCol1 = wsConfig.Range("B2").value
-    idCol2 = wsConfig.Range("B3").value
-    valueColumns1 = wsConfig.Range("B4").value
-    valueColumns2 = wsConfig.Range("B5").value
-    additionalColumns1 = wsConfig.Range("B6").value
+    ' Get configuration settings from table
+    idCol1 = GetConfigValue(wsConfig, "Sheet1 ID Column")
+    idCol2 = GetConfigValue(wsConfig, "Sheet2 ID Column")
+    valueColumns1 = GetConfigValue(wsConfig, "Sheet1 Value Columns")
+    valueColumns2 = GetConfigValue(wsConfig, "Sheet2 Value Columns")
+    additionalColumns1 = GetConfigValue(wsConfig, "Sheet1 Additional Columns")
     
     ' Get tolerance (default to 0.01 if not specified or invalid)
-    If IsNumeric(wsConfig.Range("B7").value) And wsConfig.Range("B7").value >= 0 Then
-        tolerance = CDbl(wsConfig.Range("B7").value)
+    Dim toleranceStr As String
+    toleranceStr = GetConfigValue(wsConfig, "Tolerance")
+    If IsNumeric(toleranceStr) And CDbl(toleranceStr) >= 0 Then
+        tolerance = CDbl(toleranceStr)
     Else
         tolerance = 0.01
     End If
     
     ' Get detail sheet setting and additional columns from second sheet
-    detailSheet = Trim(UCase(CStr(wsConfig.Range("B8").value)))
-    additionalColumns2 = wsConfig.Range("B9").value
+    detailSheet = Trim(UCase(GetConfigValue(wsConfig, "Detail Sheet")))
+    additionalColumns2 = GetConfigValue(wsConfig, "Sheet2 Additional Columns")
     
     ' Build dictionaries of ID -> Total
     Set dict1 = BuildTotalsDictionary(ws1, idCol1, valueColumns1)
@@ -98,14 +100,33 @@ Private Function ValidateSetup() As Boolean
         Exit Function
     End If
     
-    ' Check configuration is filled
-    If Len(wsConfig.Range("B2").value) = 0 Or Len(wsConfig.Range("B3").value) = 0 Then
-        MsgBox "Please specify ID columns in Recon Config sheet.", vbCritical, "Error"
+    ' Check that ReconConfigTable exists
+    Dim tblConfig As ListObject
+    On Error Resume Next
+    Set tblConfig = wsConfig.ListObjects("ReconConfigTable")
+    On Error GoTo 0
+    
+    If tblConfig Is Nothing Then
+        MsgBox "ReconConfigTable not found in Recon Config sheet. Please convert your configuration to a table named 'ReconConfigTable'.", vbCritical, "Error"
         Exit Function
     End If
     
-    If Len(wsConfig.Range("B4").value) = 0 Or Len(wsConfig.Range("B5").value) = 0 Then
-        MsgBox "Please specify value columns in Recon Config sheet.", vbCritical, "Error"
+    ' Check required configuration settings
+    Dim idCol1 As String, idCol2 As String
+    Dim valueColumns1 As String, valueColumns2 As String
+    
+    idCol1 = GetConfigValue(wsConfig, "Sheet1 ID Column")
+    idCol2 = GetConfigValue(wsConfig, "Sheet2 ID Column")
+    valueColumns1 = GetConfigValue(wsConfig, "Sheet1 Value Columns")
+    valueColumns2 = GetConfigValue(wsConfig, "Sheet2 Value Columns")
+    
+    If Len(idCol1) = 0 Or Len(idCol2) = 0 Then
+        MsgBox "Please specify both ID columns in Recon Config table.", vbCritical, "Error"
+        Exit Function
+    End If
+    
+    If Len(valueColumns1) = 0 Or Len(valueColumns2) = 0 Then
+        MsgBox "Please specify value columns for both sheets in Recon Config table.", vbCritical, "Error"
         Exit Function
     End If
     
@@ -360,6 +381,45 @@ Private Function FindColumnIndex(ws As Worksheet, columnName As String) As Long
     Next col
     
     FindColumnIndex = 0
+End Function
+
+Private Function GetConfigValue(wsConfig As Worksheet, settingName As String) As String
+    ' Get configuration value from ReconConfigTable by setting name (case-insensitive)
+    GetConfigValue = ""
+    
+    ' Get the config table
+    Dim tblConfig As ListObject
+    On Error Resume Next
+    Set tblConfig = wsConfig.ListObjects("ReconConfigTable")
+    On Error GoTo 0
+    
+    If tblConfig Is Nothing Then Exit Function
+    
+    ' Find Setting and Value column indexes
+    Dim settingColIndex As Long, valueColIndex As Long
+    Dim col As Long
+    
+    For col = 1 To tblConfig.ListColumns.Count
+        If UCase(Trim(tblConfig.HeaderRowRange.Cells(1, col).value)) = "SETTING" Then
+            settingColIndex = col
+        ElseIf UCase(Trim(tblConfig.HeaderRowRange.Cells(1, col).value)) = "VALUE" Then
+            valueColIndex = col
+        End If
+    Next col
+    
+    If settingColIndex = 0 Or valueColIndex = 0 Then Exit Function
+    
+    ' Search for the setting (case-insensitive)
+    Dim row As Long
+    Dim settingNameUpper As String
+    settingNameUpper = UCase(Trim(settingName))
+    
+    For row = 1 To tblConfig.ListRows.Count
+        If UCase(Trim(CStr(tblConfig.DataBodyRange.Cells(row, settingColIndex).value))) = settingNameUpper Then
+            GetConfigValue = Trim(CStr(tblConfig.DataBodyRange.Cells(row, valueColIndex).value))
+            Exit Function
+        End If
+    Next row
 End Function
 
 Private Function GetUniqueIDs(dict1 As Object, dict2 As Object) As Collection
