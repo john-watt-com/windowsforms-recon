@@ -1,4 +1,4 @@
-# Config Sheet Example
+# Recon Config Sheet Example
 
 ## Basic Example
 
@@ -16,7 +16,7 @@ If your Excel files look like this:
 | C001 | A | 1080 |
 | C002 | B | 1620 |
 
-## Your Config Sheet Should Look Like:
+## Your Recon Config Sheet Should Look Like:
 
 | A | B |
 |---|---|
