@@ -494,6 +494,190 @@ Public Sub ShowReconForm()
     ReconForm.Show
 End Sub
 
+' ========================================
+' TRANSFORMATION MODULE
+' ========================================
+
+' Main transformation routine - reads Transform Config sheet and creates transformed sheets
+Public Sub RunTransform()
+    On Error GoTo ErrorHandler
+    
+    ' Check if Transform Config sheet exists
+    Dim wsTransformConfig As Worksheet
+    On Error Resume Next
+    Set wsTransformConfig = ThisWorkbook.Worksheets("Transform Config")
+    On Error GoTo ErrorHandler
+    
+    If wsTransformConfig Is Nothing Then
+        MsgBox "Transform Config sheet not found. Please create it first.", vbCritical, "Error"
+        Exit Sub
+    End If
+    
+    ' Read transform configuration (starts at row 2)
+    Dim transformName As String, sourceSheetName As String, targetSheetName As String
+    Dim configRow As Long
+    configRow = 2 ' Row with transform name, source, and target
+    
+    transformName = Trim(CStr(wsTransformConfig.Cells(configRow, 1).Value))
+    sourceSheetName = Trim(CStr(wsTransformConfig.Cells(configRow, 2).Value))
+    targetSheetName = Trim(CStr(wsTransformConfig.Cells(configRow, 3).Value))
+    
+    If Len(transformName) = 0 Or Len(sourceSheetName) = 0 Or Len(targetSheetName) = 0 Then
+        MsgBox "Transform configuration incomplete. Check Transform Config sheet rows 2 (Name, Source Sheet, Target Sheet).", vbCritical, "Error"
+        Exit Sub
+    End If
+    
+    ' Verify source sheet exists
+    Dim wsSource As Worksheet
+    On Error Resume Next
+    Set wsSource = ThisWorkbook.Worksheets(sourceSheetName)
+    On Error GoTo ErrorHandler
+    
+    If wsSource Is Nothing Then
+        MsgBox "Source sheet '" & sourceSheetName & "' not found.", vbCritical, "Error"
+        Exit Sub
+    End If
+    
+    ' Create or get target sheet
+    Dim wsTarget As Worksheet
+    Set wsTarget = GetOrCreateWorksheet(targetSheetName)
+    wsTarget.Cells.Clear ' Clear existing content
+    
+    ' Read column definitions (starting from row 5: Order, Target Column, Type, Source)
+    Dim columnDefs As Collection
+    Set columnDefs = New Collection
+    
+    Dim row As Long
+    row = 5
+    Do While Len(Trim(CStr(wsTransformConfig.Cells(row, 1).Value))) > 0
+        Dim colDef As Object
+        Set colDef = CreateObject("Scripting.Dictionary")
+        
+        colDef("Order") = CLng(wsTransformConfig.Cells(row, 1).Value)
+        colDef("TargetColumn") = Trim(CStr(wsTransformConfig.Cells(row, 2).Value))
+        colDef("Type") = Trim(UCase(CStr(wsTransformConfig.Cells(row, 3).Value)))
+        
+        ' Read source as text/value
+        Dim sourceValue As String
+        sourceValue = Trim(CStr(wsTransformConfig.Cells(row, 4).Value))
+        
+        ' For FORMULA type, ensure it starts with =
+        If colDef("Type") = "FORMULA" Then
+            If Left(sourceValue, 1) <> "=" Then
+                sourceValue = "=" & sourceValue
+            End If
+        End If
+        
+        colDef("Source") = sourceValue
+        
+        columnDefs.Add colDef
+        row = row + 1
+    Loop
+    
+    If columnDefs.Count = 0 Then
+        MsgBox "No column definitions found. Add column definitions starting at row 5.", vbCritical, "Error"
+        Exit Sub
+    End If
+    
+    ' Apply transformation
+    ApplyTransformation wsSource, wsTarget, columnDefs
+    
+    MsgBox "Transformation completed successfully!" & vbCrLf & _
+           "Transform: " & transformName & vbCrLf & _
+           "Source: " & sourceSheetName & vbCrLf & _
+           "Target: " & targetSheetName, vbInformation, "Success"
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error during transformation: " & Err.Description, vbCritical, "Error"
+End Sub
+
+Private Sub ApplyTransformation(wsSource As Worksheet, wsTarget As Worksheet, columnDefs As Collection)
+    ' Write headers
+    Dim colDef As Object
+    Dim col As Long
+    
+    For Each colDef In columnDefs
+        col = colDef("Order")
+        wsTarget.Cells(1, col).Value = colDef("TargetColumn")
+    Next colDef
+    
+    ' Determine source data range
+    Dim lastSourceRow As Long
+    lastSourceRow = wsSource.Cells(wsSource.Rows.Count, 1).End(xlUp).row
+    
+    If lastSourceRow < 2 Then
+        MsgBox "Source sheet has no data rows.", vbExclamation, "Warning"
+        Exit Sub
+    End If
+    
+    ' Populate all rows with EXISTING and STATIC columns only
+    Dim sourceRow As Long, targetRow As Long
+    Dim sourceColIndex As Long
+    
+    For sourceRow = 2 To lastSourceRow
+        targetRow = sourceRow
+        
+        For Each colDef In columnDefs
+            col = colDef("Order")
+            
+            Select Case colDef("Type")
+                Case "EXISTING"
+                    ' Copy from source column
+                    sourceColIndex = FindColumnIndex(wsSource, colDef("Source"))
+                    
+                    If sourceColIndex > 0 Then
+                        If wsSource.Cells(sourceRow, sourceColIndex).HasFormula Then
+                            wsTarget.Cells(targetRow, col).Formula = wsSource.Cells(sourceRow, sourceColIndex).Formula
+                        Else
+                            wsTarget.Cells(targetRow, col).Value = wsSource.Cells(sourceRow, sourceColIndex).Value
+                        End If
+                    End If
+                    
+                Case "STATIC"
+                    ' Static value - same for all rows
+                    wsTarget.Cells(targetRow, col).Value = colDef("Source")
+                    
+                Case "FORMULA"
+                    ' Skip for now - will add after creating table
+                    
+            End Select
+        Next colDef
+    Next sourceRow
+    
+    ' Create table with the data we have
+    Dim lastCol As Long
+    lastCol = columnDefs.Count
+    Dim lastRow As Long
+    lastRow = lastSourceRow
+    
+    Dim tableRange As Range
+    Set tableRange = wsTarget.Range(wsTarget.Cells(1, 1), wsTarget.Cells(lastRow, lastCol))
+    
+    ' Delete existing table if present
+    On Error Resume Next
+    wsTarget.ListObjects(1).Delete
+    On Error GoTo 0
+    
+    ' Create new table
+    Dim tbl As ListObject
+    Set tbl = wsTarget.ListObjects.Add(xlSrcRange, tableRange, , xlYes)
+    tbl.TableStyle = "TableStyleMedium2"
+    
+    ' Now add FORMULA columns - table will auto-fill them down
+    For Each colDef In columnDefs
+        If colDef("Type") = "FORMULA" Then
+            col = colDef("Order")
+            ' Add formula to first data row - table calculated column feature will auto-fill
+            wsTarget.Cells(2, col).Formula = colDef("Source")
+        End If
+    Next colDef
+    
+    ' Auto-fit columns
+    wsTarget.Columns("A:" & ColLetter(lastCol)).AutoFit
+End Sub
+
 ' Helper: Get worksheet by name or create it if it doesn't exist
 Private Function GetOrCreateWorksheet(sheetName As String) As Worksheet
     Dim ws As Worksheet

@@ -32,6 +32,7 @@ See [SETUP_INSTRUCTIONS.md](SETUP_INSTRUCTIONS.md) for detailed setup steps.
 - **ReconForm.vba** - UI code (import as UserForm code-behind)
 - **SETUP_INSTRUCTIONS.md** - Complete setup guide
 - **CONFIG_EXAMPLE.md** - Configuration examples
+- **TRANSFORM_CONFIG.md** - Guide for creating custom sheet transformations
 
 ## Input Requirements
 
@@ -48,6 +49,16 @@ Your Excel files must have:
 | Interactive column selection UI | Manual config in Config sheet |
 | Multiple worksheet tabs | Single workbook with named sheets |
 | Faster (external app) | Slower (runs in Excel) |
+
+## Transform Feature
+
+Create custom views from any sheet using the Transform Config sheet:
+- **Select & reorder columns** - Choose which columns to include and their order
+- **Add static values** - Insert constant values (statuses, labels, dates)
+- **Excel formulas** - Calculate new columns (IF statements, math, text functions)
+- **Lookup data** - Use XLOOKUP, VLOOKUP, or INDEX/MATCH to enrich data from other sheets
+
+See [TRANSFORM_CONFIG.md](TRANSFORM_CONFIG.md) for complete guide with examples.
 
 ## Distribution
 

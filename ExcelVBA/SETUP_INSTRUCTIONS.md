@@ -83,6 +83,11 @@ If you don't see the Developer tab in Excel:
    - Caption: `Run Reconciliation`
    - Position: Below button 2
 
+   **CommandButton4:**
+   - Name: `btnRunTransform`
+   - Caption: `Run Transform`
+   - Position: Below button 3
+
    **Label1:**
    - Name: `lblStatus`
    - Caption: `Ready`

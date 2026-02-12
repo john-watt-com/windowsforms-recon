@@ -8,6 +8,7 @@ Option Explicit
 '    - CommandButton1 (Name: btnLoadSheet1, Caption: "Load Worksheet 1")
 '    - CommandButton2 (Name: btnLoadSheet2, Caption: "Load Worksheet 2")
 '    - CommandButton3 (Name: btnRunRecon, Caption: "Run Reconciliation")
+'    - CommandButton4 (Name: btnRunTransform, Caption: "Run Transform")
 '    - Label1 (Name: lblStatus, Caption: "Ready")
 ' 4. Copy this code into the UserForm code window
 
@@ -48,6 +49,22 @@ Private Sub btnRunRecon_Click()
     
 ErrorHandler:
     lblStatus.Caption = "Error during reconciliation"
+    MsgBox "Error: " & Err.Description, vbCritical, "Error"
+End Sub
+
+Private Sub btnRunTransform_Click()
+    On Error GoTo ErrorHandler
+    
+    lblStatus.Caption = "Running transformation..."
+    DoEvents
+    
+    RunTransform
+    
+    lblStatus.Caption = "Transformation completed"
+    Exit Sub
+    
+ErrorHandler:
+    lblStatus.Caption = "Error during transformation"
     MsgBox "Error: " & Err.Description, vbCritical, "Error"
 End Sub
 
