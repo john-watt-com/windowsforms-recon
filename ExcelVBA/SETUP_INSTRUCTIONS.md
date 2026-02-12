@@ -38,11 +38,15 @@ In the **Recon Config** worksheet, set up the following:
 | 1   | **Setting** | **Value** |
 | 2   | Sheet1 ID Column | _(enter column name, e.g., "CustomerID")_ |
 | 3   | Sheet2 ID Column | _(enter column name, e.g., "CustomerID")_ |
-| 4   | Sheet1 Value Columns | _(comma-separated, e.g., "Amount1,Amount2")_ |
+| 4   | Sheet1 Value Columns | _(comma-separated, e.g., "Amount1,Amount2" or "+Debits,-Credits")_ |
 | 5   | Sheet2 Value Columns | _(comma-separated, e.g., "TotalAmount")_ |
 | 6   | Sheet1 Additional Columns | _(optional: comma-separated columns to display, e.g., "Region,Department")_ |
+| 7   | Tolerance | _(optional: numeric value, e.g., "0.01". Defaults to 0.01 if not specified)_ |
 
-**Note:** Row 6 (Sheet1 Additional Columns) is optional. If specified, the first occurrence of each ID from Sheet1 will have these column values displayed in the results.
+**Notes:** 
+- Row 6 (Sheet1 Additional Columns) is optional. If specified, the first occurrence of each ID from Sheet1 will have these column values displayed in the results.
+- Row 7 (Tolerance) is optional. Sets the maximum difference for records to be considered matching. Default is 0.01.
+- Row 4 & 5 (Value Columns) support +/- prefixes: use `+` to add columns, `-` to subtract them (e.g., "+Debits,-Credits").
 
 ### 4. Enable Developer Tab
 

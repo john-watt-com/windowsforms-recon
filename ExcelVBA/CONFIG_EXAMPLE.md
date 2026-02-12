@@ -26,6 +26,7 @@ If your Excel files look like this:
 | Sheet1 Value Columns | Sales,Tax |
 | Sheet2 Value Columns | TotalRevenue |
 | Sheet1 Additional Columns | Region |
+| Tolerance | 0.01 |
 
 ## What This Does
 
@@ -36,7 +37,7 @@ If your Excel files look like this:
 - For Sheet2: Uses **TotalRevenue** for each CustomerID
   - C001: 1080
   - C002: 1620
-- Compares the totals
+- Compares the totals with a tolerance of **0.01** (records are considered matching if the difference is less than 0.01)
 
 ## Expected Results
 
