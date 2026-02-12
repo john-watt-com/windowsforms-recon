@@ -11,19 +11,15 @@ The Transform feature allows you to create custom views of your reconciliation r
 
 ## Transform Config Sheet Structure
 
-Create a worksheet named **"Transform Config"** with the following structure:
+Create a worksheet named **"Transform Config"**. You can define **multiple transforms** in a single sheet by separating them with blank rows.
 
-### Header Section (Rows 1-2)
+### Single Transform Structure
 
 | A | B | C | D |
 |---|---|---|---|
 | **Transform Name** | **Source Sheet** | **Target Sheet** | |
 | _(your transform name)_ | _(source sheet name)_ | _(target sheet name)_ | |
-
-### Column Definitions Section (Rows 4-onwards)
-
-| A | B | C | D |
-|---|---|---|---|
+| _(empty row)_ | | | |
 | **Order** | **Target Column** | **Type** | **Source** |
 | 1 | ID | Existing | ID |
 | 2 | Customer | Existing | Region |
@@ -31,11 +27,39 @@ Create a worksheet named **"Transform Config"** with the following structure:
 | 4 | Priority | Formula | IF([@Amount]>1000,"HIGH","LOW") |
 | 5 | OwnerName | Formula | XLOOKUP([@ID],Lookup!$A:$A,Lookup!$B:$B,"Unknown") |
 
-**Column Definitions:**
+### Multiple Transforms Structure
+
+To define multiple transforms, separate each with a **blank row** after the column definitions:
+
+| Row | A | B | C | D |
+|-----|---|---|---|---|
+| 1 | **Transform Name** | **Source Sheet** | **Target Sheet** | |
+| 2 | Export Matches | Match Results | Export | |
+| 3 | _(empty)_ | | | |
+| 4 | **Order** | **Target Column** | **Type** | **Source** |
+| 5 | 1 | ID | Existing | ID |
+| 6 | 2 | Amount | Existing | Sheet1 Total |
+| 7 | _(empty)_ | | | |
+| 8 | **Transform Name** | **Source Sheet** | **Target Sheet** | |
+| 9 | Export Errors | Error Results | Error Report | |
+| 10 | _(empty)_ | | | |
+| 11 | **Order** | **Target Column** | **Type** | **Source** |
+| 12 | 1 | ID | Existing | ID |
+| 13 | 2 | Difference | Existing | Difference |
+
+When you run the transform, you'll be prompted to select which one to execute.
+
+### Column Definitions
 - **Order** (Column A): Numeric order (1, 2, 3...) for the columns in the target sheet
 - **Target Column** (Column B): The header name for the new column
 - **Type** (Column C): One of: `Existing`, `Static`, or `Formula`
 - **Source** (Column D): Depends on Type (see below)
+
+**Important Notes:**
+- Each transform must have a blank row separating the worksheet mapping from column definitions (Row 3 in the examples)
+- The column definition header row (`Order | Target Column | Type | Source`) is expected on Row 4 for the first transform
+- After all column definitions, leave a blank row before starting the next transform
+- If only one transform exists, it runs automatically; multiple transforms show a selection dialog
 
 ## Column Types
 
@@ -334,17 +358,46 @@ RunTransform
 
 ## Advanced: Multiple Transforms
 
-To maintain multiple transform configurations:
+You can define **multiple transforms in a single Transform Config sheet**. The system automatically detects all transforms and lets you choose which one to run.
 
-**Option 1:** Change row 2 when switching transforms
-- Keep multiple configuration blocks in the same sheet
-- Update row 2 to point to the configuration you want to run
+**How it works:**
+1. Define your first transform starting at Row 2 (Name, Source, Target → Empty Row → Column Headers → Column Definitions)
+2. After the last column definition, leave a **blank row**
+3. Start your next transform on the following row with the same structure
+4. Repeat for as many transforms as you need
 
-**Option 2:** Use separate Transform Config sheets
-- Create "Transform Config 1", "Transform Config 2", etc.
-- Rename the active one to "Transform Config" before running
+**Example layout:**
+```
+Row 2:  Transform 1 Name | Source 1 | Target 1
+Row 3:  (empty)
+Row 4:  Order | Target Column | Type | Source
+Row 5-7: Column definitions for Transform 1
+Row 8:  (empty) ← Separator before next transform
+Row 9:  Transform 2 Name | Source 2 | Target 2
+Row 10: (empty)
+Row 11: Order | Target Column | Type | Source
+Row 12-15: Column definitions for Transform 2
+```
 
-**Option 3:** Modify the RunTransform code to accept a transform name parameter
+**Running multiple transforms:**
+- If only **one transform** exists, it runs automatically
+- If **multiple transforms** exist, you'll see a selection dialog:
+  ```
+  Available Transforms:
+  
+  1. Export Matches (Match Results → Export)
+  2. Error Report (Error Results → Error Report)
+  3. Full Analysis (All Results → Analysis)
+  
+  Enter the number of the transform to run:
+  ```
+- Enter the number corresponding to your desired transform
+
+**Benefits:**
+- ✅ Keep all transforms organized in one place
+- ✅ Easy to copy/modify existing transforms
+- ✅ No need to switch sheets or rename configs
+- ✅ Quick selection via numbered list
 
 ---
 
