@@ -3,7 +3,92 @@ Option Explicit
 ' Main reconciliation module
 ' Ported from C# WindowsForms ExcelReconApp
 
-Public Sub RunReconciliation()
+' Module-level variable to store active workflow
+Public ActiveWorkflow As String
+
+' Get workflow configuration from WorkflowsTable
+Private Function GetWorkflowConfig(workflowName As String) As Object
+    ' Returns Dictionary with: ReconConfigSheet, TransformConfigSheet, ResultSheetPrefix
+    Dim workflowConfig As Object
+    Set workflowConfig = CreateObject("Scripting.Dictionary")
+    
+    ' Default configuration if workflow not found
+    workflowConfig("ReconConfigSheet") = "Recon Config"
+    workflowConfig("TransformConfigSheet") = "Transform Config"
+    workflowConfig("ResultSheetPrefix") = ""
+    
+    ' Check if Workflows sheet exists
+    Dim wsWorkflows As Worksheet
+    On Error Resume Next
+    Set wsWorkflows = ThisWorkbook.Worksheets("Workflows")
+    On Error GoTo 0
+    
+    If wsWorkflows Is Nothing Then
+        ' No Workflows sheet, return defaults
+        Set GetWorkflowConfig = workflowConfig
+        Exit Function
+    End If
+    
+    ' Get WorkflowsTable (first table in the sheet)
+    Dim tblWorkflows As ListObject
+    On Error Resume Next
+    If wsWorkflows.ListObjects.Count > 0 Then
+        Set tblWorkflows = wsWorkflows.ListObjects(1)
+    End If
+    On Error GoTo 0
+    
+    If tblWorkflows Is Nothing Then
+        ' No table in Workflows sheet, return defaults
+        Set GetWorkflowConfig = workflowConfig
+        Exit Function
+    End If
+    
+    ' Find column indexes
+    Dim nameCol As Long, reconCol As Long, transformCol As Long, prefixCol As Long
+    Dim col As Long
+    
+    For col = 1 To tblWorkflows.ListColumns.Count
+        Select Case UCase(Trim(tblWorkflows.HeaderRowRange.Cells(1, col).value))
+            Case "WORKFLOW NAME"
+                nameCol = col
+            Case "RECON CONFIG SHEET"
+                reconCol = col
+            Case "TRANSFORM CONFIG SHEET"
+                transformCol = col
+            Case "RESULT SHEET PREFIX"
+                prefixCol = col
+        End Select
+    Next col
+    
+    If nameCol = 0 Or reconCol = 0 Or transformCol = 0 Then
+        ' Required columns not found, return defaults
+        Set GetWorkflowConfig = workflowConfig
+        Exit Function
+    End If
+    
+    ' Search for workflow by name (case-insensitive)
+    Dim row As Long
+    Dim workflowNameUpper As String
+    workflowNameUpper = UCase(Trim(workflowName))
+    
+    For row = 1 To tblWorkflows.ListRows.Count
+        If UCase(Trim(tblWorkflows.DataBodyRange.Cells(row, nameCol).value)) = workflowNameUpper Then
+            ' Found the workflow
+            workflowConfig("ReconConfigSheet") = Trim(CStr(tblWorkflows.DataBodyRange.Cells(row, reconCol).value))
+            workflowConfig("TransformConfigSheet") = Trim(CStr(tblWorkflows.DataBodyRange.Cells(row, transformCol).value))
+            
+            If prefixCol > 0 Then
+                workflowConfig("ResultSheetPrefix") = Trim(CStr(tblWorkflows.DataBodyRange.Cells(row, prefixCol).value))
+            End If
+            
+            Exit For
+        End If
+    Next row
+    
+    Set GetWorkflowConfig = workflowConfig
+End Function
+
+Public Sub RunReconciliation(Optional workflowName As String = "")
     ' Variable declarations
     Dim ws1 As Worksheet
     Dim ws2 As Worksheet
@@ -24,8 +109,23 @@ Public Sub RunReconciliation()
     Dim dictDetailRows As Object
     Dim allIDs As Collection
     
+    ' Get workflow configuration
+    Dim workflowConfig As Object
+    If Len(workflowName) = 0 Then
+        ' Use ActiveWorkflow if no workflow specified
+        If Len(ActiveWorkflow) > 0 Then
+            workflowName = ActiveWorkflow
+        Else
+            workflowName = "Default"
+        End If
+    End If
+    
+    Set workflowConfig = GetWorkflowConfig(workflowName)
+    Dim reconConfigSheetName As String
+    reconConfigSheetName = workflowConfig("ReconConfigSheet")
+    
     ' Validate setup
-    If Not ValidateSetup() Then Exit Sub
+    If Not ValidateSetup(reconConfigSheetName) Then Exit Sub
     
     ' Clear previous results
     ClearResults
@@ -34,7 +134,7 @@ Public Sub RunReconciliation()
     Set ws1 = ThisWorkbook.Worksheets("Sheet1")
     Set ws2 = ThisWorkbook.Worksheets("Sheet2")
     Set wsResults = GetOrCreateWorksheet("All Results")
-    Set wsConfig = ThisWorkbook.Worksheets("Recon Config")
+    Set wsConfig = ThisWorkbook.Worksheets(reconConfigSheetName)
     
     ' Get configuration settings from table
     idCol1 = GetConfigValue(wsConfig, "Sheet1 ID Column")
@@ -88,7 +188,7 @@ Public Sub RunReconciliation()
     MsgBox "Reconciliation completed! " & allIDs.Count & " records processed.", vbInformation, "Success"
 End Sub
 
-Private Function ValidateSetup() As Boolean
+Private Function ValidateSetup(reconConfigSheetName As String) As Boolean
     ValidateSetup = False
     
     ' Check worksheets exist
@@ -96,22 +196,24 @@ Private Function ValidateSetup() As Boolean
     Dim ws1 As Worksheet, ws2 As Worksheet, wsConfig As Worksheet
     Set ws1 = ThisWorkbook.Worksheets("Sheet1")
     Set ws2 = ThisWorkbook.Worksheets("Sheet2")
-    Set wsConfig = ThisWorkbook.Worksheets("Recon Config")
+    Set wsConfig = ThisWorkbook.Worksheets(reconConfigSheetName)
     On Error GoTo 0
     
     If ws1 Is Nothing Or ws2 Is Nothing Or wsConfig Is Nothing Then
-        MsgBox "Required worksheets not found. Ensure 'Sheet1', 'Sheet2', and 'Recon Config' exist.", vbCritical, "Error"
+        MsgBox "Required worksheets not found. Ensure 'Sheet1', 'Sheet2', and '" & reconConfigSheetName & "' exist.", vbCritical, "Error"
         Exit Function
     End If
     
-    ' Check that ReconConfigTable exists
+    ' Check that a config table exists (any table in the sheet)
     Dim tblConfig As ListObject
     On Error Resume Next
-    Set tblConfig = wsConfig.ListObjects("ReconConfigTable")
+    If wsConfig.ListObjects.Count > 0 Then
+        Set tblConfig = wsConfig.ListObjects(1)
+    End If
     On Error GoTo 0
     
     If tblConfig Is Nothing Then
-        MsgBox "ReconConfigTable not found in Recon Config sheet. Please convert your configuration to a table named 'ReconConfigTable'.", vbCritical, "Error"
+        MsgBox "No table found in '" & reconConfigSheetName & "' sheet. Please convert your configuration to a table (Ctrl+T).", vbCritical, "Error"
         Exit Function
     End If
     
@@ -388,13 +490,15 @@ Private Function FindColumnIndex(ws As Worksheet, columnName As String) As Long
 End Function
 
 Private Function GetConfigValue(wsConfig As Worksheet, settingName As String) As String
-    ' Get configuration value from ReconConfigTable by setting name (case-insensitive)
+    ' Get configuration value from config table by setting name (case-insensitive)
     GetConfigValue = ""
     
-    ' Get the config table
+    ' Get the first table in the config sheet
     Dim tblConfig As ListObject
     On Error Resume Next
-    Set tblConfig = wsConfig.ListObjects("ReconConfigTable")
+    If wsConfig.ListObjects.Count > 0 Then
+        Set tblConfig = wsConfig.ListObjects(1)
+    End If
     On Error GoTo 0
     
     If tblConfig Is Nothing Then Exit Function
@@ -575,8 +679,11 @@ Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, dict1 As 
         row = row + 1
     Next i
     
-    ' Format number columns (Difference, Sheet1 Total, Sheet2 Total)
-    wsResults.Range(wsResults.Cells(2, 2), wsResults.Cells(row - 1, 5)).NumberFormat = "#,##0.00"
+    ' Format number columns (Difference, Sheet1 Total, Sheet2 Total - skip ID in column 3)
+    ' Column 2: Difference
+    wsResults.Range(wsResults.Cells(2, 2), wsResults.Cells(row - 1, 2)).NumberFormat = "#,##0.00"
+    ' Columns 4-5: Sheet1 Total, Sheet2 Total
+    wsResults.Range(wsResults.Cells(2, 4), wsResults.Cells(row - 1, 5)).NumberFormat = "#,##0.00"
     
     ' Convert to Table
     Dim lastRow As Long
@@ -768,9 +875,11 @@ Public Sub ImportExcelFile(targetSheet As Worksheet)
     Dim fd As FileDialog
     Set fd = Application.FileDialog(msoFileDialogFilePicker)
     
-    fd.Title = "Select Excel File to Import"
+    fd.Title = "Select Excel or CSV File to Import"
     fd.Filters.Clear
+    fd.Filters.Add "Excel and CSV Files", "*.xlsx;*.xls;*.xlsm;*.csv"
     fd.Filters.Add "Excel Files", "*.xlsx;*.xls;*.xlsm"
+    fd.Filters.Add "CSV Files", "*.csv"
     
     If fd.Show = -1 Then
         Dim filePath As String
@@ -804,17 +913,32 @@ End Sub
 ' ========================================
 
 ' Main transformation routine - reads Transform Config sheet and creates transformed sheets
-Public Sub RunTransform()
+Public Sub RunTransform(Optional workflowName As String = "")
     On Error GoTo ErrorHandler
+    
+    ' Get workflow configuration
+    Dim workflowConfig As Object
+    If Len(workflowName) = 0 Then
+        ' Use ActiveWorkflow if no workflow specified
+        If Len(ActiveWorkflow) > 0 Then
+            workflowName = ActiveWorkflow
+        Else
+            workflowName = "Default"
+        End If
+    End If
+    
+    Set workflowConfig = GetWorkflowConfig(workflowName)
+    Dim transformConfigSheetName As String
+    transformConfigSheetName = workflowConfig("TransformConfigSheet")
     
     ' Check if Transform Config sheet exists
     Dim wsTransformConfig As Worksheet
     On Error Resume Next
-    Set wsTransformConfig = ThisWorkbook.Worksheets("Transform Config")
+    Set wsTransformConfig = ThisWorkbook.Worksheets(transformConfigSheetName)
     On Error GoTo ErrorHandler
     
     If wsTransformConfig Is Nothing Then
-        MsgBox "Transform Config sheet not found. Please create it first.", vbCritical, "Error"
+        MsgBox "Transform Config sheet '" & transformConfigSheetName & "' not found. Please create it first.", vbCritical, "Error"
         Exit Sub
     End If
     
@@ -1356,9 +1480,12 @@ Private Sub WriteErrorResults(wsError As Worksheet, wsAllResults As Worksheet, i
             .Interior.Color = RGB(200, 200, 200)
         End With
         
-        ' Format number columns in Error Results (Difference, Sheet1 Total, Sheet2 Total)
+        ' Format number columns in Error Results (Difference, Sheet1 Total, Sheet2 Total - skip ID)
         If errorLastCol >= 3 Then
-            wsError.Range(wsError.Cells(2, 1), wsError.Cells(errorRow - 1, 3)).NumberFormat = "#,##0.00"
+            ' Format Difference column (column 1)
+            wsError.Range(wsError.Cells(2, 1), wsError.Cells(errorRow - 1, 1)).NumberFormat = "#,##0.00"
+            ' Format Sheet1 Total and Sheet2 Total (columns 3-4)
+            wsError.Range(wsError.Cells(2, 3), wsError.Cells(errorRow - 1, 4)).NumberFormat = "#,##0.00"
         End If
         
         wsError.Columns("A:" & ColLetter(errorLastCol)).AutoFit
