@@ -926,6 +926,13 @@ Public Sub ImportExcelFile(targetSheet As Worksheet)
         details = "File: " & fileName & " | Target: " & targetSheet.Name
         LogActivity "Import", "", details, "Success", rowCount
         
+        ' Update form textbox to show loaded file
+        If targetSheet.Name = "Sheet1" Then
+            ReconForm.txtFile1.Text = fileName
+        ElseIf targetSheet.Name = "Sheet2" Then
+            ReconForm.txtFile2.Text = fileName
+        End If
+        
         MsgBox "Successfully loaded data into " & targetSheet.Name, vbInformation, "Success"
         Exit Sub
         
