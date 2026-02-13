@@ -123,17 +123,19 @@ Public Sub RunReconciliation(Optional workflowName As String = "")
     Set workflowConfig = GetWorkflowConfig(workflowName)
     Dim reconConfigSheetName As String
     reconConfigSheetName = workflowConfig("ReconConfigSheet")
+    Dim resultPrefix As String
+    resultPrefix = workflowConfig("ResultSheetPrefix")
     
     ' Validate setup
     If Not ValidateSetup(reconConfigSheetName) Then Exit Sub
     
     ' Clear previous results
-    ClearResults
+    ClearResults resultPrefix
     
     ' Get configuration
     Set ws1 = ThisWorkbook.Worksheets("Sheet1")
     Set ws2 = ThisWorkbook.Worksheets("Sheet2")
-    Set wsResults = GetOrCreateWorksheet("All Results")
+    Set wsResults = GetOrCreateWorksheet(ApplyPrefix(resultPrefix, "All Results"))
     Set wsConfig = ThisWorkbook.Worksheets(reconConfigSheetName)
     
     ' Get configuration settings from table
@@ -183,9 +185,15 @@ Public Sub RunReconciliation(Optional workflowName As String = "")
     WriteResults wsResults, allIDs, dict1, dict2, dictAdditional1, additionalColumns1, tolerance, sortOrder
     
     ' Split results into Match Results and Error Results sheets
-    SplitResults wsResults, ws1, ws2, idCol1, idCol2, detailSheet, dictDetailRows, dict1, dict2, dictAdditional1, dictAdditional2, additionalColumns1, additionalColumns2
+    Dim matchCount As Long, errorCount As Long
+    SplitResults wsResults, ws1, ws2, idCol1, idCol2, detailSheet, dictDetailRows, dict1, dict2, dictAdditional1, dictAdditional2, additionalColumns1, additionalColumns2, resultPrefix, matchCount, errorCount
     
-    MsgBox "Reconciliation completed! " & allIDs.Count & " records processed.", vbInformation, "Success"
+    ' Log the reconciliation
+    Dim details As String
+    details = "Config: " & reconConfigSheetName & " | Matches: " & matchCount & " | Errors: " & errorCount & " | Tolerance: " & tolerance & " | Detail Mode: " & IIf(Len(Trim(detailSheet)) > 0, detailSheet, "None")
+    LogActivity "Reconciliation", workflowName, details, "Success", allIDs.Count
+    
+    MsgBox "Reconciliation completed! " & allIDs.Count & " records processed (" & matchCount & " matches, " & errorCount & " errors).", vbInformation, "Success"
 End Sub
 
 Private Function ValidateSetup(reconConfigSheetName As String) As Boolean
@@ -720,10 +728,10 @@ Private Function ColLetter(colNum As Long) As String
     ColLetter = letter
 End Function
 
-Private Sub ClearResults()
+Private Sub ClearResults(Optional resultPrefix As String = "")
     ' Clear All Results sheet
     Dim wsResults As Worksheet
-    Set wsResults = GetOrCreateWorksheet("All Results")
+    Set wsResults = GetOrCreateWorksheet(ApplyPrefix(resultPrefix, "All Results"))
     
     ' Delete existing table if present
     On Error Resume Next
@@ -735,7 +743,7 @@ Private Sub ClearResults()
     
     ' Clear Match Results sheet
     Dim wsMatch As Worksheet
-    Set wsMatch = GetOrCreateWorksheet("Match Results")
+    Set wsMatch = GetOrCreateWorksheet(ApplyPrefix(resultPrefix, "Match Results"))
     On Error Resume Next
     wsMatch.ListObjects("MatchResultsTable").Delete
     On Error GoTo 0
@@ -743,7 +751,7 @@ Private Sub ClearResults()
     
     ' Clear Error Results sheet
     Dim wsError As Worksheet
-    Set wsError = GetOrCreateWorksheet("Error Results")
+    Set wsError = GetOrCreateWorksheet(ApplyPrefix(resultPrefix, "Error Results"))
     On Error Resume Next
     wsError.ListObjects("ErrorResultsTable").Delete
     On Error GoTo 0
@@ -885,6 +893,8 @@ Public Sub ImportExcelFile(targetSheet As Worksheet)
         Dim filePath As String
         filePath = fd.SelectedItems(1)
         
+        On Error GoTo ImportError
+        
         ' Clear target sheet
         targetSheet.Cells.Clear
         
@@ -897,7 +907,32 @@ Public Sub ImportExcelFile(targetSheet As Worksheet)
         
         wb.Close False
         
+        ' Count rows imported (excluding header)
+        Dim rowCount As Long
+        rowCount = targetSheet.Cells(targetSheet.Rows.Count, 1).End(xlUp).row - 1
+        
+        ' Extract filename from path
+        Dim fileName As String
+        Dim pos As Long
+        pos = InStrRev(filePath, "\")
+        If pos > 0 Then
+            fileName = Mid(filePath, pos + 1)
+        Else
+            fileName = filePath
+        End If
+        
+        ' Log the import
+        Dim details As String
+        details = "File: " & fileName & " | Target: " & targetSheet.Name
+        LogActivity "Import", "", details, "Success", rowCount
+        
         MsgBox "Successfully loaded data into " & targetSheet.Name, vbInformation, "Success"
+        Exit Sub
+        
+ImportError:
+        ' Log error
+        LogActivity "Import", "", "Error loading file: " & filePath & " - " & Err.Description, "Error", 0
+        MsgBox "Error loading file: " & Err.Description, vbCritical, "Error"
     End If
 End Sub
 
@@ -915,6 +950,9 @@ End Sub
 ' Main transformation routine - reads Transform Config sheet and creates transformed sheets
 Public Sub RunTransform(Optional workflowName As String = "")
     On Error GoTo ErrorHandler
+    
+    Dim startTime As Double
+    startTime = Timer
     
     ' Get workflow configuration
     Dim workflowConfig As Object
@@ -1011,6 +1049,17 @@ Public Sub RunTransform(Optional workflowName As String = "")
     ' Apply transformation
     ApplyTransformation wsSource, wsTarget, columnDefs
     
+    ' Determine row count
+    Dim rowCount As Long
+    rowCount = wsTarget.Cells(wsTarget.Rows.Count, 1).End(xlUp).row - 1 ' Subtract header
+    
+    ' Log the transformation
+    Dim details As String
+    Dim duration As Double
+    duration = Timer - startTime
+    details = "Transform: " & transformName & " | Source: " & sourceSheetName & " | Target: " & targetSheetName & " | Duration: " & Format(duration, "0.0") & "s"
+    LogActivity "Transformation", workflowName, details, "Success", rowCount
+    
     MsgBox "Transformation completed successfully!" & vbCrLf & _
            "Transform: " & transformName & vbCrLf & _
            "Source: " & sourceSheetName & vbCrLf & _
@@ -1019,6 +1068,8 @@ Public Sub RunTransform(Optional workflowName As String = "")
     Exit Sub
     
 ErrorHandler:
+    ' Log error
+    LogActivity "Transformation", workflowName, "Error: " & Err.Description, "Error", 0
     MsgBox "Error during transformation: " & Err.Description, vbCritical, "Error"
 End Sub
 
@@ -1128,7 +1179,10 @@ Private Sub SplitResults(wsAllResults As Worksheet, ws1 As Worksheet, ws2 As Wor
                          idCol1 As String, idCol2 As String, detailSheet As String, _
                          dictDetailRows As Object, dict1 As Object, dict2 As Object, _
                          dictAdditional1 As Object, dictAdditional2 As Object, _
-                         additionalColumns1 As String, additionalColumns2 As String)
+                         additionalColumns1 As String, additionalColumns2 As String, _
+                         Optional resultPrefix As String = "", _
+                         Optional ByRef matchCount As Long = 0, _
+                         Optional ByRef errorCount As Long = 0)
     ' Check if ReconResultsTable exists
     Dim tblAll As ListObject
     On Error Resume Next
@@ -1152,8 +1206,8 @@ Private Sub SplitResults(wsAllResults As Worksheet, ws1 As Worksheet, ws2 As Wor
     
     ' Get Match Results and Error Results worksheets
     Dim wsMatch As Worksheet, wsError As Worksheet
-    Set wsMatch = GetOrCreateWorksheet("Match Results")
-    Set wsError = GetOrCreateWorksheet("Error Results")
+    Set wsMatch = GetOrCreateWorksheet(ApplyPrefix(resultPrefix, "Match Results"))
+    Set wsError = GetOrCreateWorksheet(ApplyPrefix(resultPrefix, "Error Results"))
     
     ' Determine if we're in detail expansion mode
     Dim isDetailMode As Boolean
@@ -1163,17 +1217,17 @@ Private Sub SplitResults(wsAllResults As Worksheet, ws1 As Worksheet, ws2 As Wor
         ' Detail expansion mode for Match Results
         WriteDetailMatchResults wsMatch, wsAllResults, ws1, ws2, idCol1, idCol2, detailSheet, _
                                 dictDetailRows, dict1, dict2, dictAdditional1, dictAdditional2, _
-                                additionalColumns1, additionalColumns2, idCol, sheet1TotalCol, sheet2TotalCol
+                                additionalColumns1, additionalColumns2, idCol, sheet1TotalCol, sheet2TotalCol, matchCount
     Else
         ' Aggregated mode for Match Results (current behavior)
-        WriteAggregatedMatchResults wsMatch, wsAllResults, idCol, lastCol
+        WriteAggregatedMatchResults wsMatch, wsAllResults, idCol, lastCol, matchCount
     End If
     
     ' Error Results: always aggregated (keep current behavior)
-    WriteErrorResults wsError, wsAllResults, idCol, diffCol, lastCol
+    WriteErrorResults wsError, wsAllResults, idCol, diffCol, lastCol, errorCount
 End Sub
 
-Private Sub WriteAggregatedMatchResults(wsMatch As Worksheet, wsAllResults As Worksheet, idCol As Long, lastCol As Long)
+Private Sub WriteAggregatedMatchResults(wsMatch As Worksheet, wsAllResults As Worksheet, idCol As Long, lastCol As Long, ByRef matchCount As Long)
     ' Current behavior: Copy aggregated match results
     Dim tblAll As ListObject
     Set tblAll = wsAllResults.ListObjects("ReconResultsTable")
@@ -1190,6 +1244,7 @@ Private Sub WriteAggregatedMatchResults(wsMatch As Worksheet, wsAllResults As Wo
     Dim row As Long, matchRow As Long
     Dim isMatch As Boolean
     matchRow = 2
+    matchCount = 0
     
     For row = 2 To tblAll.Range.Rows.Count
         isMatch = wsAllResults.Cells(row, 1).value ' IsMatch column
@@ -1202,6 +1257,7 @@ Private Sub WriteAggregatedMatchResults(wsMatch As Worksheet, wsAllResults As Wo
                 matchCol = matchCol + 1
             Next col
             matchRow = matchRow + 1
+            matchCount = matchCount + 1
         End If
     Next row
     
@@ -1241,7 +1297,8 @@ Private Sub WriteDetailMatchResults(wsMatch As Worksheet, wsAllResults As Worksh
                                      dictDetailRows As Object, dict1 As Object, dict2 As Object, _
                                      dictAdditional1 As Object, dictAdditional2 As Object, _
                                      additionalColumns1 As String, additionalColumns2 As String, _
-                                     idCol As Long, sheet1TotalCol As Long, sheet2TotalCol As Long)
+                                     idCol As Long, sheet1TotalCol As Long, sheet2TotalCol As Long, _
+                                     ByRef matchCount As Long)
     ' Detail expansion mode: Output detail rows for matched IDs
     Dim tblAll As ListObject
     Set tblAll = wsAllResults.ListObjects("ReconResultsTable")
@@ -1321,6 +1378,7 @@ Private Sub WriteDetailMatchResults(wsMatch As Worksheet, wsAllResults As Worksh
     Dim j As Long
     
     matchRow = 2
+    matchCount = 0
     For row = 2 To tblAll.Range.Rows.Count
         isMatch = wsAllResults.Cells(row, 1).value ' IsMatch column
         
@@ -1328,6 +1386,7 @@ Private Sub WriteDetailMatchResults(wsMatch As Worksheet, wsAllResults As Worksh
             id = CStr(wsAllResults.Cells(row, idCol).value)
             total1 = wsAllResults.Cells(row, sheet1TotalCol).value
             total2 = wsAllResults.Cells(row, sheet2TotalCol).value
+            matchCount = matchCount + 1
             
             ' Get detail rows for this ID
             If dictDetailRows.Exists(id) Then
@@ -1421,7 +1480,7 @@ Private Sub WriteDetailMatchResults(wsMatch As Worksheet, wsAllResults As Worksh
     End If
 End Sub
 
-Private Sub WriteErrorResults(wsError As Worksheet, wsAllResults As Worksheet, idCol As Long, diffCol As Long, lastCol As Long)
+Private Sub WriteErrorResults(wsError As Worksheet, wsAllResults As Worksheet, idCol As Long, diffCol As Long, lastCol As Long, ByRef errorCount As Long)
     ' Error Results: always aggregated
     Dim tblAll As ListObject
     Set tblAll = wsAllResults.ListObjects("ReconResultsTable")
@@ -1439,6 +1498,7 @@ Private Sub WriteErrorResults(wsError As Worksheet, wsAllResults As Worksheet, i
     Dim row As Long, errorRow As Long
     Dim isMatch As Boolean
     errorRow = 2
+    errorCount = 0
     
     For row = 2 To tblAll.Range.Rows.Count
         isMatch = wsAllResults.Cells(row, 1).value ' IsMatch column
@@ -1456,6 +1516,7 @@ Private Sub WriteErrorResults(wsError As Worksheet, wsAllResults As Worksheet, i
             ' Highlight error rows
             wsError.Rows(errorRow).Interior.Color = RGB(255, 200, 200)
             errorRow = errorRow + 1
+            errorCount = errorCount + 1
         End If
     Next row
     
@@ -1490,6 +1551,87 @@ Private Sub WriteErrorResults(wsError As Worksheet, wsAllResults As Worksheet, i
         
         wsError.Columns("A:" & ColLetter(errorLastCol)).AutoFit
     End If
+End Sub
+
+' Helper: Apply prefix to sheet name
+Private Function ApplyPrefix(prefix As String, sheetName As String) As String
+    If Len(Trim(prefix)) > 0 Then
+        ApplyPrefix = Trim(prefix) & " " & sheetName
+    Else
+        ApplyPrefix = sheetName
+    End If
+End Function
+
+' Helper: Log activity to unified Activity Log sheet
+Private Sub LogActivity(operationType As String, workflowName As String, _
+                        details As String, status As String, recordCount As Long)
+    On Error GoTo ErrorHandler
+    
+    ' Get or create Activity Log sheet
+    Dim wsLog As Worksheet
+    Set wsLog = GetOrCreateWorksheet("Activity Log")
+    
+    ' Check if table exists, if not create header and table
+    Dim tblLog As ListObject
+    On Error Resume Next
+    Set tblLog = wsLog.ListObjects("ActivityLogTable")
+    On Error GoTo ErrorHandler
+    
+    If tblLog Is Nothing Then
+        ' Create header row
+        wsLog.Cells(1, 1).value = "Timestamp"
+        wsLog.Cells(1, 2).value = "Operation"
+        wsLog.Cells(1, 3).value = "Workflow"
+        wsLog.Cells(1, 4).value = "Details"
+        wsLog.Cells(1, 5).value = "Status"
+        wsLog.Cells(1, 6).value = "Records"
+        wsLog.Cells(1, 7).value = "User"
+        
+        ' Format header
+        With wsLog.Range("A1:G1")
+            .Font.Bold = True
+            .Interior.Color = RGB(200, 200, 200)
+        End With
+        
+        ' Create table with just header row
+        Dim tableRange As Range
+        Set tableRange = wsLog.Range("A1:G1")
+        Set tblLog = wsLog.ListObjects.Add(xlSrcRange, tableRange, , xlYes)
+        tblLog.Name = "ActivityLogTable"
+        tblLog.TableStyle = "TableStyleMedium2"
+    End If
+    
+    ' Add new row to table
+    Dim newRow As ListRow
+    Set newRow = tblLog.ListRows.Add
+    
+    ' Populate row data
+    With newRow
+        .Range(1, 1).value = Now() ' Timestamp
+        .Range(1, 2).value = operationType
+        .Range(1, 3).value = IIf(Len(Trim(workflowName)) > 0, workflowName, "N/A")
+        .Range(1, 4).value = details
+        .Range(1, 5).value = status
+        .Range(1, 6).value = recordCount
+        .Range(1, 7).value = Environ("USERNAME")
+    End With
+    
+    ' Format timestamp column
+    tblLog.ListColumns("Timestamp").DataBodyRange.NumberFormat = "yyyy-mm-dd hh:mm:ss"
+    
+    ' Color code by status
+    If status = "Error" Then
+        newRow.Range.Interior.Color = RGB(255, 200, 200) ' Light red
+    End If
+    
+    ' Auto-fit columns
+    wsLog.Columns("A:G").AutoFit
+    
+    Exit Sub
+    
+ErrorHandler:
+    ' Silent fail - don't interrupt operations if logging fails
+    Debug.Print "Logging error: " & Err.Description
 End Sub
 
 
