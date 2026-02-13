@@ -1,0 +1,13 @@
+ID,Value-Plus,Value-Minus,Field1,Field2,Field3
+1,100,0,lorem,ipsum,dolor
+2,150,0,lorem,ipsum,dolor
+2,50,0,lorem,ipsum,dolor
+3,100.50,0,sit,amet,consectetur
+3,50.02,0.02,sit,amet,consectetur
+4,75.25,0,adipiscing,elit,sed
+5,200,0,do,eiusmod,tempor
+5,100,0,do,eiusmod,tempor
+6,100,0,incididunt,ut,labore
+6,30,5,incididunt,ut,labore
+7,50,0,et,dolore,magna
+7,50,0,et,dolore,magna

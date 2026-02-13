@@ -92,10 +92,20 @@ If you don't see the Developer tab in Excel:
 2. Rename the UserForm to "ReconForm" in Properties (F4)
 3. Add the following controls from the Toolbox:
 
+   **Label2:**
+   - Name: `lblWorkflow`
+   - Caption: `Workflow:`
+   - Position: Top left
+
+   **ComboBox1:**
+   - Name: `cboWorkflow`
+   - ListStyle: `fmListStylePlain`
+   - Position: To the right of Label2
+
    **CommandButton1:**
    - Name: `btnLoadSheet1`
    - Caption: `Load Worksheet 1`
-   - Position: Top left
+   - Position: Below workflow controls
 
    **CommandButton2:**
    - Name: `btnLoadSheet2`
@@ -163,18 +173,22 @@ If you get errors about file access:
 
 ### Basic Workflow:
 
-1. **Configure** (Recon Config sheet):
+1. **Select Workflow** (if using workflows):
+   - Choose a workflow from the dropdown at the top of the form
+   - If no Workflows sheet exists, "Default" is used automatically
+
+2. **Configure** (Recon Config sheet or workflow-specific config sheet):
    - Create a table named "ReconConfigTable" with Setting and Value columns
    - Add required settings: Sheet1 ID Column, Sheet2 ID Column, Sheet1 Value Columns, Sheet2 Value Columns
    - Add optional settings as needed (Tolerance, Additional Columns, Detail Sheet, etc.)
    - Settings can be in any order
 
-2. **Load Data**:
+3. **Load Data**:
    - Click "Load Worksheet 1" and select first Excel file
    - Click "Load Worksheet 2" and select second Excel file
    - Check that data appears in Sheet1 and Sheet2 tabs
 
-3. **Run Reconciliation**:
+4. **Run Reconciliation**:
    - Click "Run Reconciliation"
    - View results in three tabs:
      - **All Results**: Complete data with all records
@@ -327,6 +341,69 @@ Value: Sheet1 Total DESC,ID
 
 **Default Behavior:**
 If Sort Order is omitted, results are sorted by **ID** in ascending order.
+
+### Workflows (Optional - Advanced)
+
+**Purpose:** Manage multiple reconciliation and transformation configurations. Switch between different comparison scenarios (Orders, Invoices, GL, etc.) using a dropdown selector.
+
+**Benefits:**
+- Organize multiple configs for different business processes
+- Reuse transform configs across different recon configs
+- Quick switching between workflows via UI dropdown
+
+**Setup:**
+
+1. Create a new sheet named **"Workflows"**
+
+2. Create a table named **"WorkflowsTable"** with these columns:
+   - **Workflow Name** - Display name in dropdown
+   - **Recon Config Sheet** - Name of sheet containing ReconConfigTable
+   - **Transform Config Sheet** - Name of sheet containing transform configuration
+   - **Result Sheet Prefix** - (Optional, for future use - leave blank for now)
+
+3. Example WorkflowsTable:
+
+| Workflow Name | Recon Config Sheet | Transform Config Sheet | Result Sheet Prefix |
+|--------------|-------------------|----------------------|-------------------|
+| Default | Recon Config | Transform Config | _(blank)_ |
+| OrderComparison | Recon Config - Orders | Transform Config - Standard | Orders |
+| InvoiceComparison | Recon Config - Invoices | Transform Config - Standard | Invoices |
+| GLReconciliation | Recon Config - GL | Transform Config - GL Export | GL |
+
+4. Create the referenced config sheets:
+   - Each Recon Config sheet must have a table named **ReconConfigTable**
+   - Each Transform Config sheet follows the standard transform config format
+   - You can reuse sheets (e.g., multiple workflows can use the same Transform Config)
+
+**Usage:**
+1. Open the ReconForm UserForm
+2. Select a workflow from the dropdown at the top
+3. Load data and run reconciliation/transform as normal
+4. The tool uses the config sheets specified in the selected workflow
+
+**Benefits Example:**
+
+You have three different order systems to reconcile, each with different column names but all need the same export format:
+
+```
+Workflow: OrderSystem_A
+  Recon Config: Recon Config - System A (maps System A columns)
+  Transform Config: Transform Config - Standard (same export format)
+
+Workflow: OrderSystem_B
+  Recon Config: Recon Config - System B (maps System B columns)
+  Transform Config: Transform Config - Standard (reused!)
+
+Workflow: OrderSystem_C
+  Recon Config: Recon Config - System C (maps System C columns)
+  Transform Config: Transform Config - Standard (reused!)
+```
+
+**Backward Compatibility:**
+If no Workflows sheet exists, the tool defaults to:
+- Recon Config Sheet: "Recon Config"
+- Transform Config Sheet: "Transform Config"
+- Workflow Name: "Default"
 
 ## Input Requirements
 

@@ -7,12 +7,32 @@ VBA port of the C# Windows Forms Excel Reconciliation App. Compares two Excel fi
 1. **Create workbook** with sheets: `Sheet1`, `Sheet2`, `Recon Config`, `All Results`
    - Note: `Match Results` and `Error Results` sheets are created automatically
 2. **Set up Recon Config sheet** with a table named **"ReconConfigTable"** containing Setting and Value columns (see [CONFIG_EXAMPLE.md](CONFIG_EXAMPLE.md))
-3. **Import VBA code**:
+3. **(Optional) Set up Workflows sheet** for managing multiple configurations (see Workflows section below)
+4. **Import VBA code**:
    - Module: [ReconModule.vba](ReconModule.vba)
    - UserForm: [ReconForm.vba](ReconForm.vba)
-4. **Run** the UserForm to load files and reconcile
+5. **Run** the UserForm to load files and reconcile
 
 See [SETUP_INSTRUCTIONS.md](SETUP_INSTRUCTIONS.md) for detailed setup steps.
+
+## Workflows
+
+Manage multiple reconciliation and transformation configurations using workflows. This allows you to:
+- Switch between different comparison scenarios (Orders, Invoices, GL, etc.)
+- Reuse transform configs across multiple recon configs
+- Keep configs organized and easily selectable via dropdown
+
+**Setup:**
+1. Create a **"Workflows"** sheet with table **"WorkflowsTable"**
+2. Columns: Workflow Name | Recon Config Sheet | Transform Config Sheet | Result Sheet Prefix
+3. Example:
+   ```
+   Default          | Recon Config           | Transform Config      | (blank)
+   OrderComparison  | Recon Config - Orders  | Transform Config - Standard | Orders
+   ```
+4. Select workflow from dropdown in UI
+
+If no Workflows sheet exists, the tool defaults to using "Recon Config" and "Transform Config" sheets.
 
 ## What It Does
 
