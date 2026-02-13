@@ -570,6 +570,24 @@ Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, dict1 As 
         Next i
     End If
     
+    ' Write header
+    Dim lastHeaderCol As Long
+    lastHeaderCol = WriteResultsHeader(wsResults, additionalColNames, hasAdditionalCols)
+    
+    ' Build and sort row data
+    Dim rowData As Collection
+    Set rowData = BuildResultsRowData(allIDs, dict1, dict2, dictAdditional, additionalColNames, hasAdditionalCols, tolerance)
+    SortRowData rowData, sortOrder, wsResults
+    
+    ' Write data rows
+    Dim lastRow As Long
+    lastRow = WriteResultsDataRows(wsResults, rowData, additionalColNames, hasAdditionalCols)
+    
+    ' Create and format table
+    CreateAndFormatResultsTable wsResults, lastRow, lastHeaderCol
+End Sub
+
+Private Function WriteResultsHeader(wsResults As Worksheet, additionalColNames() As String, hasAdditionalCols As Boolean) As Long
     ' Write header - new order: IsMatch, Difference, ID, Sheet1 Total, Sheet2 Total, then additional columns
     Dim col As Long
     col = 1
@@ -581,6 +599,7 @@ Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, dict1 As 
     
     ' Add additional column headers
     If hasAdditionalCols Then
+        Dim i As Long
         For i = 0 To UBound(additionalColNames)
             wsResults.Cells(1, col).value = additionalColNames(i)
             col = col + 1
@@ -596,18 +615,23 @@ Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, dict1 As 
         .Interior.Color = RGB(200, 200, 200)
     End With
     
-    ' Build and sort row data
+    WriteResultsHeader = lastHeaderCol
+End Function
+
+Private Function BuildResultsRowData(allIDs As Collection, dict1 As Object, dict2 As Object, _
+                                     dictAdditional As Object, additionalColNames() As String, _
+                                     hasAdditionalCols As Boolean, tolerance As Double) As Collection
+    ' Build row data collection
     Dim rowData As Collection
     Set rowData = New Collection
     
+    Dim i As Long, j As Long
     Dim id As String
     Dim total1 As Double, total2 As Double, diff As Double
     Dim isMatch As Boolean
     Dim additionalDict As Object
     Dim rowDict As Object
-    Dim j As Long
     
-    ' Build all row data
     For i = 1 To allIDs.Count
         id = allIDs(i)
         
@@ -654,11 +678,16 @@ Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, dict1 As 
         rowData.Add rowDict
     Next i
     
-    ' Sort row data by specified columns
-    SortRowData rowData, sortOrder, wsResults
-    
+    Set BuildResultsRowData = rowData
+End Function
+
+Private Function WriteResultsDataRows(wsResults As Worksheet, rowData As Collection, _
+                                      additionalColNames() As String, hasAdditionalCols As Boolean) As Long
     ' Write sorted data rows
-    Dim row As Long
+    Dim row As Long, col As Long
+    Dim i As Long, j As Long
+    Dim rowDict As Object
+    
     row = 2
     For i = 1 To rowData.Count
         Set rowDict = rowData(i)
@@ -687,15 +716,19 @@ Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, dict1 As 
         row = row + 1
     Next i
     
+    WriteResultsDataRows = row - 1  ' Return last row number
+End Function
+
+Private Sub CreateAndFormatResultsTable(wsResults As Worksheet, lastRow As Long, lastHeaderCol As Long)
     ' Format number columns (Difference, Sheet1 Total, Sheet2 Total - skip ID in column 3)
-    ' Column 2: Difference
-    wsResults.Range(wsResults.Cells(2, 2), wsResults.Cells(row - 1, 2)).NumberFormat = "#,##0.00"
-    ' Columns 4-5: Sheet1 Total, Sheet2 Total
-    wsResults.Range(wsResults.Cells(2, 4), wsResults.Cells(row - 1, 5)).NumberFormat = "#,##0.00"
+    If lastRow >= 2 Then
+        ' Column 2: Difference
+        wsResults.Range(wsResults.Cells(2, 2), wsResults.Cells(lastRow, 2)).NumberFormat = "#,##0.00"
+        ' Columns 4-5: Sheet1 Total, Sheet2 Total
+        wsResults.Range(wsResults.Cells(2, 4), wsResults.Cells(lastRow, 5)).NumberFormat = "#,##0.00"
+    End If
     
     ' Convert to Table
-    Dim lastRow As Long
-    lastRow = row - 1
     If lastRow >= 2 Then
         Dim tableRange As Range
         Set tableRange = wsResults.Range(wsResults.Cells(1, 1), wsResults.Cells(lastRow, lastHeaderCol))
