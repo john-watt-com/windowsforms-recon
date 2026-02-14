@@ -20,7 +20,7 @@ Private Function GetWorkflowConfig(workflowName As String) As Object
     ' Check if Workflows sheet exists
     Dim wsWorkflows As Worksheet
     On Error Resume Next
-    Set wsWorkflows = ThisWorkbook.Worksheets("Workflows")
+    '' Get workflow configuration for a workflow name (new multi-workflow config)
     On Error GoTo 0
     
     If wsWorkflows Is Nothing Then
@@ -561,7 +561,7 @@ Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, dict1 As 
     Dim additionalColNames() As String
     Dim hasAdditionalCols As Boolean
     hasAdditionalCols = (Len(Trim(additionalColumnsStr)) > 0)
-    
+
     If hasAdditionalCols Then
         additionalColNames = Split(additionalColumnsStr, ",")
         Dim i As Long
@@ -569,20 +569,29 @@ Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, dict1 As 
             additionalColNames(i) = Trim(additionalColNames(i))
         Next i
     End If
-    
+
+    ' Clear previous data and formatting in wsResults
+    wsResults.Cells.Clear
+
     ' Write header
     Dim lastHeaderCol As Long
     lastHeaderCol = WriteResultsHeader(wsResults, additionalColNames, hasAdditionalCols)
-    
+
     ' Build and sort row data
     Dim rowData As Collection
     Set rowData = BuildResultsRowData(allIDs, dict1, dict2, dictAdditional, additionalColNames, hasAdditionalCols, tolerance)
     SortRowData rowData, sortOrder, wsResults
-    
+
     ' Write data rows
     Dim lastRow As Long
     lastRow = WriteResultsDataRows(wsResults, rowData, additionalColNames, hasAdditionalCols)
-    
+
+    ' Force IsMatch column to Boolean (TRUE/FALSE)
+    Dim r As Long
+    For r = 2 To lastRow
+        wsResults.Cells(r, 1).Value = CBool(wsResults.Cells(r, 1).Value)
+    Next r
+
     ' Create and format table
     CreateAndFormatResultsTable wsResults, lastRow, lastHeaderCol
 End Sub
@@ -1287,9 +1296,10 @@ Private Sub WriteAggregatedMatchResults(wsMatch As Worksheet, wsAllResults As Wo
     matchCount = 0
     
     For row = 2 To tblAll.Range.Rows.Count
-        isMatch = wsAllResults.Cells(row, 1).value ' IsMatch column
-        
-        If isMatch Then
+        Dim isMatchValue As Variant
+        isMatchValue = wsAllResults.Cells(row, 1).Value ' IsMatch column
+        If (VarType(isMatchValue) = vbBoolean And isMatchValue = True) _
+            Or (VarType(isMatchValue) = vbString And UCase(Trim(isMatchValue)) = "TRUE") Then
             ' Copy to Match Results (skip IsMatch and Difference columns)
             matchCol = 1
             For col = idCol To lastCol
@@ -1420,9 +1430,10 @@ Private Sub WriteDetailMatchResults(wsMatch As Worksheet, wsAllResults As Worksh
     matchRow = 2
     matchCount = 0
     For row = 2 To tblAll.Range.Rows.Count
-        isMatch = wsAllResults.Cells(row, 1).value ' IsMatch column
-        
-        If isMatch Then
+        Dim isMatchValue As Variant
+        isMatchValue = wsAllResults.Cells(row, 1).Value ' IsMatch column
+        If (VarType(isMatchValue) = vbBoolean And isMatchValue = True) _
+            Or (VarType(isMatchValue) = vbString And UCase(Trim(isMatchValue)) = "TRUE") Then
             id = CStr(wsAllResults.Cells(row, idCol).value)
             total1 = wsAllResults.Cells(row, sheet1TotalCol).value
             total2 = wsAllResults.Cells(row, sheet2TotalCol).value

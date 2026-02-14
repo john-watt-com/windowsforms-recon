@@ -1,0 +1,5 @@
+WorkflowName,Description,Enabled,Notes
+GL Monthly,GL monthly reconciliation,TRUE,
+GL Daily,GL daily reconciliation,TRUE,
+Trade Journal Monthly,Trade journal monthly recon,TRUE,
+Trade Journal Daily,Trade journal daily recon,TRUE,

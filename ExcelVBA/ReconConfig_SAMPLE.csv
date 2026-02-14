@@ -1,0 +1,33 @@
+WorkflowName,Setting,Value
+GL Monthly,Sheet1 ID Column,ID
+GL Monthly,Sheet2 ID Column,ID
+GL Monthly,Sheet1 Value Columns,Amount
+GL Monthly,Sheet2 Value Columns,Amount
+GL Monthly,Sheet1 Filter,
+GL Monthly,Sheet2 Filter,
+GL Monthly,Tolerance,0.03
+GL Monthly,Sort Order,ParentID,ID
+GL Daily,Sheet1 ID Column,ID
+GL Daily,Sheet2 ID Column,ID
+GL Daily,Sheet1 Value Columns,Amount
+GL Daily,Sheet2 Value Columns,Amount
+GL Daily,Sheet1 Filter,Amount<>0
+GL Daily,Sheet2 Filter,Amount<>0
+GL Daily,Tolerance,0.03
+GL Daily,Sort Order,ParentID,ID
+Trade Journal Monthly,Sheet1 ID Column,ID
+Trade Journal Monthly,Sheet2 ID Column,ID
+Trade Journal Monthly,Sheet1 Value Columns,Amount
+Trade Journal Monthly,Sheet2 Value Columns,Amount
+Trade Journal Monthly,Sheet1 Filter,
+Trade Journal Monthly,Sheet2 Filter,Description="Trade Journal Error"
+Trade Journal Monthly,Tolerance,0.03
+Trade Journal Monthly,Sort Order,ParentID,ID
+Trade Journal Daily,Sheet1 ID Column,ID
+Trade Journal Daily,Sheet2 ID Column,ID
+Trade Journal Daily,Sheet1 Value Columns,Amount
+Trade Journal Daily,Sheet2 Value Columns,Amount
+Trade Journal Daily,Sheet1 Filter,
+Trade Journal Daily,Sheet2 Filter,Description="Trade Journal Error"
+Trade Journal Daily,Tolerance,0.03
+Trade Journal Daily,Sort Order,ParentID,ID

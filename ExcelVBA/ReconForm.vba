@@ -116,16 +116,17 @@ Private Sub PopulateWorkflows()
         Exit Sub
     End If
     
-    ' Find Workflow Name column
-    Dim nameCol As Long
-    Dim col As Long
+    ' Find Workflow Name and Enabled columns (support both "Workflow Name" and "WorkflowName")
+    Dim nameCol As Long, enabledCol As Long, col As Long
     For col = 1 To tblWorkflows.ListColumns.Count
-        If UCase(Trim(tblWorkflows.HeaderRowRange.Cells(1, col).value)) = "WORKFLOW NAME" Then
-            nameCol = col
-            Exit For
-        End If
+        Select Case UCase(Trim(tblWorkflows.HeaderRowRange.Cells(1, col).Value))
+            Case "WORKFLOW NAME", "WORKFLOWNAME"
+                nameCol = col
+            Case "ENABLED"
+                enabledCol = col
+        End Select
     Next col
-    
+
     If nameCol = 0 Then
         ' Workflow Name column not found
         cboWorkflow.AddItem "Default"
@@ -133,21 +134,27 @@ Private Sub PopulateWorkflows()
         ActiveWorkflow = "Default"
         Exit Sub
     End If
-    
-    ' Populate combo box with workflow names
+
+    ' Populate combo box with workflow names where Enabled is TRUE
     Dim row As Long
     For row = 1 To tblWorkflows.ListRows.Count
         Dim workflowName As String
-        workflowName = Trim(CStr(tblWorkflows.DataBodyRange.Cells(row, nameCol).value))
-        If Len(workflowName) > 0 Then
+        workflowName = Trim(CStr(tblWorkflows.DataBodyRange.Cells(row, nameCol).Value))
+        Dim enabledValue As String
+        If enabledCol > 0 Then
+            enabledValue = UCase(Trim(CStr(tblWorkflows.DataBodyRange.Cells(row, enabledCol).Value)))
+        Else
+            enabledValue = "TRUE" ' If no Enabled column, default to TRUE
+        End If
+        If Len(workflowName) > 0 And enabledValue = "TRUE" Then
             cboWorkflow.AddItem workflowName
         End If
     Next row
-    
+
     ' Select first workflow if available
     If cboWorkflow.ListCount > 0 Then
         cboWorkflow.ListIndex = 0
-        ActiveWorkflow = cboWorkflow.value
+        ActiveWorkflow = cboWorkflow.Value
     End If
 End Sub
 
