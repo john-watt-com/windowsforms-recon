@@ -414,11 +414,7 @@ Private Function BuildAllDetailRowsDictionary(ws As Worksheet, idColumnName As S
     Dim dict As Object
     Set dict = CreateObject("Scripting.Dictionary")
     
-    ' If no additional columns specified, return empty dictionary
-    If Len(Trim(additionalColumnsStr)) = 0 Then
-        Set BuildAllDetailRowsDictionary = dict
-        Exit Function
-    End If
+    ' Always build detail rows, even if no additional columns specified
     
     ' Find ID column index
     Dim idColIndex As Long
@@ -428,23 +424,25 @@ Private Function BuildAllDetailRowsDictionary(ws As Worksheet, idColumnName As S
         Exit Function
     End If
     
-    ' Parse additional column names
+    ' Parse additional column names only if specified
     Dim additionalColNames() As String
-    additionalColNames = Split(additionalColumnsStr, ",")
-    
-    ' Find additional column indexes
     Dim additionalColIndexes() As Long
-    ReDim additionalColIndexes(0 To UBound(additionalColNames))
+    Dim hasAdditionalCols As Boolean
+    hasAdditionalCols = (Len(Trim(additionalColumnsStr)) > 0)
     Dim i As Long
-    For i = 0 To UBound(additionalColNames)
-        additionalColNames(i) = Trim(additionalColNames(i))
-        additionalColIndexes(i) = FindColumnIndex(ws, additionalColNames(i))
-        If additionalColIndexes(i) = 0 Then
-            MsgBox "Additional column '" & additionalColNames(i) & "' not found in " & ws.Name, vbCritical, "Error"
-            Set BuildAllDetailRowsDictionary = dict
-            Exit Function
-        End If
-    Next i
+    If hasAdditionalCols Then
+        additionalColNames = Split(additionalColumnsStr, ",")
+        ReDim additionalColIndexes(0 To UBound(additionalColNames))
+        For i = 0 To UBound(additionalColNames)
+            additionalColNames(i) = Trim(additionalColNames(i))
+            additionalColIndexes(i) = FindColumnIndex(ws, additionalColNames(i))
+            If additionalColIndexes(i) = 0 Then
+                MsgBox "Additional column '" & additionalColNames(i) & "' not found in " & ws.Name, vbCritical, "Error"
+                Set BuildAllDetailRowsDictionary = dict
+                Exit Function
+            End If
+        Next i
+    End If
     
     ' Loop through data rows (starting from row 2)
     Dim lastRow As Long
@@ -462,9 +460,11 @@ Private Function BuildAllDetailRowsDictionary(ws As Worksheet, idColumnName As S
         
         ' Create dictionary for this row
         Set rowDict = CreateObject("Scripting.Dictionary")
-        For i = 0 To UBound(additionalColIndexes)
-            rowDict.Add additionalColNames(i), ws.Cells(row, additionalColIndexes(i)).value
-        Next i
+        If hasAdditionalCols Then
+            For i = 0 To UBound(additionalColIndexes)
+                rowDict.Add additionalColNames(i), ws.Cells(row, additionalColIndexes(i)).value
+            Next i
+        End If
         
         ' Add to collection for this ID
         If Not dict.Exists(id) Then
