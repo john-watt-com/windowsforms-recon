@@ -1,0 +1,5 @@
+ID,ParentID,Amount,Description,Date,JournalType
+1,A,50,Trade Journal Error,2024-01-01,Manual
+1,A,50,Other,2024-01-02,Auto
+2,A,0,Other,2024-01-03,Manual
+3,B,200,Trade Journal Error,2024-01-04,Manual
