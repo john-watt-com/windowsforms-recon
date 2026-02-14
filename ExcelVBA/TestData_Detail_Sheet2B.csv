@@ -1,0 +1,7 @@
+TradeID,Amount,Description,Type
+2001,60,Fee,Base
+2001,40,Fee,Adjustment
+2002,0,Interest,Base
+2003,25,Fee,Base
+2003,25,Fee,Adjustment
+2004,0,Principal,Base
