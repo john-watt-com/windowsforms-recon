@@ -3,3 +3,8 @@ ID,ParentID,Amount,Description,Date,JournalType
 1,A,50,Other,2024-01-02,Auto
 2,A,0,Other,2024-01-03,Manual
 3,B,200,Trade Journal Error,2024-01-04,Manual
+4,B,100,Other,2024-01-05,Manual
+5,C,999,Other,2024-01-06,Manual
+6,C,456,Other,2024-01-07,Manual
+7,D,789,Other,2024-01-08,Manual
+8,E,1001,Other,2024-01-09,Manual
