@@ -108,6 +108,8 @@ Public Sub RunReconciliation(Optional workflowName As String = "")
     Dim dictAdditional2 As Object
     Dim dictDetailRows As Object
     Dim allIDs As Collection
+    Dim sheet1Filter As String
+    Dim sheet2Filter As String
     
     ' Get workflow configuration
     Dim workflowConfig As Object
@@ -144,6 +146,8 @@ Public Sub RunReconciliation(Optional workflowName As String = "")
     valueColumns1 = GetConfigValue(wsConfig, "Sheet1 Value Columns")
     valueColumns2 = GetConfigValue(wsConfig, "Sheet2 Value Columns")
     additionalColumns1 = GetConfigValue(wsConfig, "Sheet1 Additional Columns")
+    sheet1Filter = GetConfigValue(wsConfig, "Sheet1 Filter")
+    sheet2Filter = GetConfigValue(wsConfig, "Sheet2 Filter")
     
     ' Get tolerance (default to 0.01 if not specified or invalid)
     Dim toleranceStr As String
@@ -162,9 +166,9 @@ Public Sub RunReconciliation(Optional workflowName As String = "")
     Dim sortOrder As String
     sortOrder = GetConfigValue(wsConfig, "Sort Order")
     
-    ' Build dictionaries of ID -> Total
-    Set dict1 = BuildTotalsDictionary(ws1, idCol1, valueColumns1)
-    Set dict2 = BuildTotalsDictionary(ws2, idCol2, valueColumns2)
+    ' Build dictionaries of ID -> Total (with filtering)
+    Set dict1 = BuildTotalsDictionary(ws1, idCol1, valueColumns1, sheet1Filter)
+    Set dict2 = BuildTotalsDictionary(ws2, idCol2, valueColumns2, sheet2Filter)
     
     ' Build dictionaries of ID -> additional column values (from both sheets)
     Set dictAdditional1 = BuildAdditionalColumnsDictionary(ws1, idCol1, additionalColumns1)
@@ -173,9 +177,9 @@ Public Sub RunReconciliation(Optional workflowName As String = "")
     ' Build detail rows dictionary if detail mode is enabled
     Set dictDetailRows = CreateObject("Scripting.Dictionary")
     If detailSheet = "SHEET1" Then
-        Set dictDetailRows = BuildAllDetailRowsDictionary(ws1, idCol1, additionalColumns1)
+        Set dictDetailRows = BuildAllDetailRowsDictionary(ws1, idCol1, additionalColumns1, sheet1Filter)
     ElseIf detailSheet = "SHEET2" Then
-        Set dictDetailRows = BuildAllDetailRowsDictionary(ws2, idCol2, additionalColumns2)
+        Set dictDetailRows = BuildAllDetailRowsDictionary(ws2, idCol2, additionalColumns2, sheet2Filter)
     End If
     
     ' Get all unique IDs from both sheets
@@ -244,6 +248,16 @@ Private Function ValidateSetup(reconConfigSheetName As String) As Boolean
         Exit Function
     End If
     
+    ' Check for valid detail sheet configuration
+    Dim detailSheet As String
+    detailSheet = Trim(UCase(GetConfigValue(wsConfig, "Detail Sheet")))
+    If Len(detailSheet) > 0 And detailSheet <> "SHEET1" And detailSheet <> "SHEET2" Then
+        MsgBox "Detail Sheet must be either 'Sheet1' or 'Sheet2' (case-insensitive) if specified.", vbCritical, "Error"
+        Exit Function
+    End If
+    
+    ' Check that both sheets are not set as detail (not supported)
+    ' (In this config, only one Detail Sheet setting is possible, so this is just a future-proof check)
     ' Check data exists
     If ws1.Cells(2, 1).value = "" Or ws2.Cells(2, 1).value = "" Then
         MsgBox "Please load data into Sheet1 and Sheet2.", vbCritical, "Error"
@@ -253,7 +267,7 @@ Private Function ValidateSetup(reconConfigSheetName As String) As Boolean
     ValidateSetup = True
 End Function
 
-Private Function BuildTotalsDictionary(ws As Worksheet, idColumnName As String, valueColumnsStr As String) As Object
+Private Function BuildTotalsDictionary(ws As Worksheet, idColumnName As String, valueColumnsStr As String, Optional filterExpr As String = "") As Object
     ' Returns Dictionary with ID as key and sum of value columns as value
     Dim dict As Object
     Set dict = CreateObject("Scripting.Dictionary")
@@ -308,6 +322,13 @@ Private Function BuildTotalsDictionary(ws As Worksheet, idColumnName As String, 
     
     Dim row As Long, id As String, total As Double, value As Double
     For row = 2 To lastRow
+        ' Apply filter if specified
+        If Len(Trim(filterExpr)) > 0 Then
+            If Not EvaluateRowFilter(ws, row, filterExpr) Then
+                GoTo NextRow
+            End If
+        End If
+        
         id = Trim(CStr(ws.Cells(row, idColIndex).value))
         
         ' Skip blank IDs
@@ -408,7 +429,7 @@ NextRowAdditional:
     Set BuildAdditionalColumnsDictionary = dict
 End Function
 
-Private Function BuildAllDetailRowsDictionary(ws As Worksheet, idColumnName As String, additionalColumnsStr As String) As Object
+Private Function BuildAllDetailRowsDictionary(ws As Worksheet, idColumnName As String, additionalColumnsStr As String, Optional filterExpr As String = "") As Object
     ' Returns Dictionary with ID as key and Collection of all row dictionaries as value
     ' Each row dictionary contains column name -> value pairs
     Dim dict As Object
@@ -453,6 +474,13 @@ Private Function BuildAllDetailRowsDictionary(ws As Worksheet, idColumnName As S
     Dim rowCollection As Collection
     
     For row = 2 To lastRow
+        ' Apply filter if specified
+        If Len(Trim(filterExpr)) > 0 Then
+            If Not EvaluateRowFilter(ws, row, filterExpr) Then
+                GoTo NextRowAll
+            End If
+        End If
+        
         id = Trim(CStr(ws.Cells(row, idColIndex).value))
         
         ' Skip blank IDs
@@ -1684,6 +1712,88 @@ ErrorHandler:
     ' Silent fail - don't interrupt operations if logging fails
     Debug.Print "Logging error: " & Err.Description
 End Sub
+
+' Filter evaluation function - supports multiple conditions
+Private Function EvaluateRowFilter(ws As Worksheet, row As Long, filterExpr As String) As Boolean
+    ' Supports multiple comma-separated conditions, e.g. Amount<>0,Category="Loan"
+    ' Handles =, <>, >, <, >=, <= for numeric and text columns
+    Dim conds() As String
+    Dim i As Long
+    Dim cond As String
+    Dim colName As String, op As String, val As String
+    Dim colIdx As Long
+    Dim cellVal As Variant
+    Dim result As Boolean
+    Dim cmpVal As Variant
+    
+    If Len(Trim(filterExpr)) = 0 Then
+        EvaluateRowFilter = True
+        Exit Function
+    End If
+    
+    conds = Split(filterExpr, ",")
+    For i = 0 To UBound(conds)
+        cond = Trim(conds(i))
+        ' Find operator (=, <>, >=, <=, >, <)
+        If InStr(cond, ">=") > 0 Then
+            op = ">="
+        ElseIf InStr(cond, "<=") > 0 Then
+            op = "<="
+        ElseIf InStr(cond, "<>") > 0 Then
+            op = "<>"
+        ElseIf InStr(cond, ">") > 0 Then
+            op = ">"
+        ElseIf InStr(cond, "<") > 0 Then
+            op = "<"
+        ElseIf InStr(cond, "=") > 0 Then
+            op = "="
+        Else
+            EvaluateRowFilter = False
+            Exit Function
+        End If
+        colName = Trim(Left(cond, InStr(cond, op) - 1))
+        val = Trim(Mid(cond, InStr(cond, op) + Len(op)))
+        ' Remove quotes for string comparisons
+        If Left(val, 1) = Chr(34) And Right(val, 1) = Chr(34) Then
+            val = Mid(val, 2, Len(val) - 2)
+        End If
+        colIdx = FindColumnIndex(ws, colName)
+        If colIdx = 0 Then
+            EvaluateRowFilter = False
+            Exit Function
+        End If
+        cellVal = ws.Cells(row, colIdx).Value
+        ' Try numeric comparison if possible
+        If IsNumeric(cellVal) And IsNumeric(val) Then
+            cmpVal = CDbl(val)
+            Select Case op
+                Case "=": result = (CDbl(cellVal) = cmpVal)
+                Case "<>": result = (CDbl(cellVal) <> cmpVal)
+                Case ">": result = (CDbl(cellVal) > cmpVal)
+                Case "<": result = (CDbl(cellVal) < cmpVal)
+                Case ">=": result = (CDbl(cellVal) >= cmpVal)
+                Case "<=": result = (CDbl(cellVal) <= cmpVal)
+                Case Else: result = False
+            End Select
+        Else
+            ' String comparison
+            Select Case op
+                Case "=": result = (CStr(cellVal) = val)
+                Case "<>": result = (CStr(cellVal) <> val)
+                Case ">": result = (CStr(cellVal) > val)
+                Case "<": result = (CStr(cellVal) < val)
+                Case ">=": result = (CStr(cellVal) >= val)
+                Case "<=": result = (CStr(cellVal) <= val)
+                Case Else: result = False
+            End Select
+        End If
+        If Not result Then
+            EvaluateRowFilter = False
+            Exit Function
+        End If
+    Next i
+    EvaluateRowFilter = True
+End Function
 
 
 

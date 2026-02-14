@@ -1,0 +1,8 @@
+TradeID,Amount,Description,Category
+1001,500,Principal,Loan
+1002,0,Interest,Loan
+1003,200,Fee,Service
+1004,0,Fee,Service
+1005,150,Adjustment,Correction
+1006,300,Principal,Loan
+1007,50,Fee,Service
