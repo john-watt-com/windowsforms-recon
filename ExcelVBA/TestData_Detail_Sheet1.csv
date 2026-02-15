@@ -1,7 +1,0 @@
-TradeID,Amount,Description,Type
-1001,300,Principal,Base
-1001,200,Principal,Adjustment
-1002,0,Interest,Base
-1003,100,Fee,Base
-1003,100,Fee,Adjustment
-1004,0,Fee,Base

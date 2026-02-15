@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Proposed Configuration Format</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1 { color: #2c3e50; }
+        h2 { color: #34495e; margin-top: 30px; }
+        table { border-collapse: collapse; margin: 20px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #3498db; color: white; font-weight: bold; }
+        tr:nth-child(even) { background-color: #f2f2f2; }
+        .note { background-color: #fff3cd; padding: 10px; margin: 10px 0; border-left: 4px solid #ffc107; }
+        .section { margin-bottom: 40px; }
+    </style>
+</head>
+<body>
+    <h1>Proposed Configuration Format</h1>
+    <p><strong>After Phase 1 Implementation (Filtering + Sorting for Transform)</strong></p>
+
+    <div class="section">
+        <h2>Workflows Table</h2>
+        <p><strong>Sheet: "Workflows"</strong></p>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>Workflow Name</th>
+                    <th>Result Sheet Prefix</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Fee Recon</td>
+                    <td>Fee</td>
+                </tr>
+                <tr>
+                    <td>Loan Recon</td>
+                    <td>Loan</td>
+                </tr>
+                <tr>
+                    <td>Interest Recon</td>
+                    <td>Interest</td>
+                </tr>
+            </tbody>
+        </table>
+        
+        <div class="note">Note: All workflows use hardcoded sheet names ("Recon Config" and "Transform Config"). Workflow Name identifies which config rows to read.</div>
+    </div>
+
+    <div class="section">
+        <h2>Recon Config (All Scenarios in One Sheet)</h2>
+        <p><strong>Sheet: "Recon Config"</strong></p>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>Workflow</th>
+                    <th>Setting</th>
+                    <th>Value</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>Fee Recon</td><td>Sheet1 ID Column</td><td>AccountID</td></tr>
+                <tr><td>Fee Recon</td><td>Sheet2 ID Column</td><td>AccountID</td></tr>
+                <tr><td>Fee Recon</td><td>Sheet1 Value Columns</td><td>Amount</td></tr>
+                <tr><td>Fee Recon</td><td>Sheet2 Value Columns</td><td>Amount</td></tr>
+                <tr><td>Fee Recon</td><td>Sheet1 Additional Columns</td><td>AccountName, Type</td></tr>
+                <tr><td>Fee Recon</td><td>Sheet2 Additional Columns</td><td>AccountName, Type</td></tr>
+                <tr><td>Fee Recon</td><td>Sheet1 Filter</td><td>Type="Fee"</td></tr>
+                <tr><td>Fee Recon</td><td>Sheet2 Filter</td><td>Type="Fee"</td></tr>
+                <tr><td>Fee Recon</td><td>Tolerance</td><td>0.01</td></tr>
+                <tr><td>Fee Recon</td><td>Detail Sheet</td><td></td></tr>
+                <tr><td>Fee Recon</td><td>Sort Order</td><td>AccountID ASC</td></tr>
+                <tr><td>Loan Recon</td><td>Sheet1 ID Column</td><td>LoanID</td></tr>
+                <tr><td>Loan Recon</td><td>Sheet2 ID Column</td><td>LoanID</td></tr>
+                <tr><td>Loan Recon</td><td>Sheet1 Value Columns</td><td>+Principal, +Interest, -Fees</td></tr>
+                <tr><td>Loan Recon</td><td>Sheet2 Value Columns</td><td>TotalAmount</td></tr>
+                <tr><td>Loan Recon</td><td>Sheet1 Additional Columns</td><td>BorrowerName, LoanType, Status</td></tr>
+                <tr><td>Loan Recon</td><td>Sheet2 Additional Columns</td><td>BorrowerName, LoanType</td></tr>
+                <tr><td>Loan Recon</td><td>Sheet1 Filter</td><td>Type="Loan" AND Status<>"Cancelled"</td></tr>
+                <tr><td>Loan Recon</td><td>Sheet2 Filter</td><td>Type="Loan"</td></tr>
+                <tr><td>Loan Recon</td><td>Tolerance</td><td>0.05</td></tr>
+                <tr><td>Loan Recon</td><td>Detail Sheet</td><td>Sheet1</td></tr>
+                <tr><td>Loan Recon</td><td>Sort Order</td><td>BorrowerName ASC, LoanID ASC</td></tr>
+                <tr><td>Interest Recon</td><td>Sheet1 ID Column</td><td>AccountID</td></tr>
+                <tr><td>Interest Recon</td><td>Sheet2 ID Column</td><td>AcctID</td></tr>
+                <tr><td>Interest Recon</td><td>Sheet1 Value Columns</td><td>InterestEarned</td></tr>
+                <tr><td>Interest Recon</td><td>Sheet2 Value Columns</td><td>InterestPaid</td></tr>
+                <tr><td>Interest Recon</td><td>Sheet1 Additional Columns</td><td>AccountType, Period</td></tr>
+                <tr><td>Interest Recon</td><td>Sheet2 Additional Columns</td><td>AccountType, Period</td></tr>
+                <tr><td>Interest Recon</td><td>Sheet1 Filter</td><td>Type="Interest" AND InterestEarned<>0</td></tr>
+                <tr><td>Interest Recon</td><td>Sheet2 Filter</td><td>Type="Interest"</td></tr>
+                <tr><td>Interest Recon</td><td>Tolerance</td><td>0.001</td></tr>
+                <tr><td>Interest Recon</td><td>Detail Sheet</td><td>Sheet2</td></tr>
+                <tr><td>Interest Recon</td><td>Sort Order</td><td>Period DESC, AccountID ASC</td></tr>
+            </tbody>
+        </table>
+        
+        <div class="note">Note: All configs in one table - Workflow column distinguishes between scenarios</div>
+    </div>
+
+    <div class="section">
+        <h2>Transform Config (Shared for All Workflows)</h2>
+        <p><strong>Sheet: "Transform Config"</strong></p>
+        
+        <h3>TransformSettingsTable</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Setting</th>
+                    <th>Value</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>Name</td><td>Upload Transform</td></tr>
+                <tr><td>Source Sheet</td><td>Match Results</td></tr>
+                <tr><td>Target Sheet</td><td>Upload Ready</td></tr>
+                <tr><td>Filter</td><td>Status<>"Cancelled"</td></tr>
+                <tr><td>Sort Order</td><td>AccountID ASC, Date DESC</td></tr>
+            </tbody>
+        </table>
+        
+        <div class="note">Note: Filter and Sort Order are optional - leave blank if not needed</div>
+        <div class="note"><strong>Important:</strong> Source Sheet and Target Sheet names are automatically prefixed by the workflow's Result Sheet Prefix.
+        <br>Example: Config specifies <code>Source Sheet = "Match Results"</code>
+        <br>• "Fee Recon" workflow (prefix = "Fee") will look for: <strong>"Fee Match Results"</strong>
+        <br>• "Loan Recon" workflow (prefix = "Loan") will look for: <strong>"Loan Match Results"</strong>
+        <br>• Workflow with no prefix will use: <strong>"Match Results"</strong> (as-is)</div>
+        
+        <h3>TransformColumnsTable</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Order</th>
+                    <th>Target Column</th>
+                    <th>Type</th>
+                    <th>Source</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>1</td><td>Account ID</td><td>EXISTING</td><td>AccountID</td></tr>
+                <tr><td>2</td><td>Account Name</td><td>EXISTING</td><td>AccountName</td></tr>
+                <tr><td>3</td><td>Transaction Date</td><td>EXISTING</td><td>Date</td></tr>
+                <tr><td>4</td><td>Transaction Type</td><td>EXISTING</td><td>Type</td></tr>
+                <tr><td>5</td><td>Amount</td><td>EXISTING</td><td>Amount</td></tr>
+                <tr><td>6</td><td>Currency</td><td>STATIC</td><td>USD</td></tr>
+                <tr><td>7</td><td>Processing Date</td><td>STATIC</td><td>=TODAY()</td></tr>
+                <tr><td>8</td><td>Net Amount</td><td>FORMULA</td><td>=[@Amount]*0.98</td></tr>
+                <tr><td>9</td><td>Upload Batch</td><td>FORMULA</td><td>=TEXT(TODAY(),"YYYYMMDD")</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>Benefits of This Structure</h2>
+        <ul>
+            <li><strong>Consistency:</strong> Both Recon and Transform use Setting/Value for global settings</li>
+            <li><strong>Flexibility:</strong> Easy to add new settings without code changes</li>
+            <li><strong>Clarity:</strong> Clear separation between settings and column operations</li>
+            <li><strong>Workflow Support:</strong> Multiple scenarios sharing common sheets</li>
+            <li><strong>Optional Features:</strong> Filter/Sort can be blank if not needed</li>
+            <li><strong>Minimal Sheet Count:</strong> Only 5 sheets needed (Workflows, Recon Config, Transform Config, Sheet1, Sheet2) regardless of number of workflows</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>Migration Notes</h2>
+        
+        <p><strong>All configs have breaking changes:</strong></p>
+        
+        <h3>Workflows Table</h3>
+        <ul>
+            <li>Old format: Three columns (Workflow Name | Recon Config Sheet | Transform Config Sheet | Result Sheet Prefix)</li>
+            <li>New format: Two columns (Workflow Name | Result Sheet Prefix)</li>
+            <li>Config sheet names are now hardcoded ("Recon Config" and "Transform Config")</li>
+        </ul>
+        
+        <h3>Recon Config</h3>
+        <ul>
+            <li>Old format: Two columns (Setting | Value)</li>
+            <li>New format: Three columns (Workflow | Setting | Value)</li>
+            <li>GetConfigValue needs workflow name parameter to filter by workflow</li>
+        </ul>
+        
+        <h3>Transform Config</h3>
+        <ul>
+            <li>Old format: Horizontal row with Name/Source/Target in row 2</li>
+            <li>New format: Vertical Setting/Value table</li>
+        </ul>
+        
+        <h3>Code changes needed</h3>
+        <ul>
+            <li>Hardcode config sheet names: "Recon Config" and "Transform Config"</li>
+            <li>GetConfigValue(wsConfig, workflowName, settingName)</li>
+            <li>Read workflow name first, then filter config table by it</li>
+        </ul>
+    </div>
+
+    <p style="margin-top: 40px; color: #7f8c8d; font-size: 12px;">
+        <strong>Tip:</strong> To paste these tables into Excel, simply select the table in your browser, copy (Ctrl+C), 
+        and paste into Excel (Ctrl+V). Excel will automatically preserve the table structure.
+    </p>
+</body>
+</html>

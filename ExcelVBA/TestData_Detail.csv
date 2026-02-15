@@ -1,14 +1,25 @@
-TradeID,Amount,Description,Type
-1001,300,Principal,Base
-1001,200,Principal,Adjustment
-1002,0,Interest,Base
-1003,100,Fee,Base
-1003,100,Fee,Adjustment
-1004,0,Fee,Base
-1005,100,Adjustment,Base
-1005,50,Adjustment,Correction
-1006,150,Principal,Base
-1006,150,Principal,Adjustment
-1007,25,Fee,Base
-1007,25,Fee,Adjustment
-1008,999,Error,Base
+AccountID,AccountName,Type,Amount,LineItem,Status
+1001,Acme Corp,Fee,100.00,Setup Fee,Active
+1001,Acme Corp,Fee,50.00,Processing Fee,Active
+1002,Widget Inc,Fee,150.50,Monthly Fee,Active
+1002,Widget Inc,Fee,75.00,Service Fee,Active
+1003,Global Ltd,Loan,3000.00,Principal Payment,Active
+1003,Global Ltd,Loan,2000.00,Additional Advance,Active
+1004,Tech Solutions,Fee,100.00,Setup Fee,Active
+1004,Tech Solutions,Fee,75.25,Processing Fee,Active
+1005,Finance Co,Interest,30.00,Q1 Interest,Active
+1005,Finance Co,Interest,20.00,Q2 Interest,Active
+1006,Services LLC,Fee,200.00,Annual Fee,Active
+1006,Services LLC,Fee,100.00,Consulting Fee,Active
+1007,Consulting Group,Fee,300.00,Base Fee,Active
+1007,Consulting Group,Fee,125.50,Variable Fee,Active
+1008,Investment Partners,Loan,7000.00,Term Loan,Active
+1008,Investment Partners,Loan,3000.00,Bridge Loan,Active
+1010,Solutions Inc,Fee,150.00,Monthly Fee,Active
+1010,Solutions Inc,Fee,60.00,Support Fee,Active
+1011,Analytics Ltd,Fee,200.00,Retainer,Active
+1011,Analytics Ltd,Fee,80.00,Extra Services,Active
+1012,Enterprise Co,Interest,45.00,Accrued Q1,Active
+1012,Enterprise Co,Interest,30.00,Accrued Q2,Active
+1013,Digital Agency,Fee,120.00,Setup Fee,Active
+1013,Digital Agency,Fee,75.00,Training Fee,Active

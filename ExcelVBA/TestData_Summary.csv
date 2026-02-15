@@ -1,8 +1,12 @@
-TradeID,Amount,Description,Category
-1001,500,Principal,Loan
-1002,0,Interest,Loan
-1003,200,Fee,Service
-1004,0,Fee,Service
-1005,150,Adjustment,Correction
-1006,300,Principal,Loan
-1007,50,Fee,Service
+AccountID,AccountName,Type,Amount,Status
+1001,Acme Corp,Fee,150.00,Active
+1002,Widget Inc,Fee,225.50,Active
+1003,Global Ltd,Loan,5000.00,Active
+1004,Tech Solutions,Fee,175.00,Active
+1005,Finance Co,Interest,50.00,Active
+1006,Services LLC,Fee,300.00,Active
+1007,Consulting Group,Fee,425.75,Active
+1008,Investment Partners,Loan,10000.00,Active
+1010,Solutions Inc,Fee,210.00,Active
+1011,Analytics Ltd,Fee,275.50,Active
+1012,Enterprise Co,Interest,75.00,Active
