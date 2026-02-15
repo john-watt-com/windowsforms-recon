@@ -6,6 +6,19 @@ Option Explicit
 ' Module-level variable to store active workflow
 Public ActiveWorkflow As String
 
+' Helper: Resolve workflow name with ActiveWorkflow fallback
+Private Function ResolveWorkflowName(workflowName As String) As String
+    If Len(workflowName) = 0 Then
+        If Len(ActiveWorkflow) > 0 Then
+            ResolveWorkflowName = ActiveWorkflow
+        Else
+            ResolveWorkflowName = "Default"
+        End If
+    Else
+        ResolveWorkflowName = workflowName
+    End If
+End Function
+
 ' Get workflow configuration from WorkflowsTable
 Private Function GetWorkflowConfig(workflowName As String) As Object
     ' Returns Dictionary with: ReconConfigSheet, TransformConfigSheet, ResultSheetPrefix
@@ -82,116 +95,116 @@ Private Function GetWorkflowConfig(workflowName As String) As Object
 End Function
 
 Public Sub RunReconciliation(Optional workflowName As String = "")
-    ' Variable declarations
-    Dim ws1 As Worksheet
-    Dim ws2 As Worksheet
-    Dim wsResults As Worksheet
-    Dim wsConfig As Worksheet
-    Dim idCol1 As String
-    Dim idCol2 As String
-    Dim valueColumns1 As String
-    Dim valueColumns2 As String
-    Dim additionalColumns1 As String
-    Dim additionalColumns2 As String
-    Dim tolerance As Double
-    Dim toleranceStr As String
-    Dim detailSheet As String
-    Dim dict1 As Object
-    Dim dict2 As Object
-    Dim dictAdditional1 As Object
-    Dim dictAdditional2 As Object
-    Dim dictDetailRows As Object
-    Dim allIDs As Collection
-    Dim sheet1Filter As String
-    Dim sheet2Filter As String
-    Dim sortOrder As String
-    Dim matchCount As Long
-    Dim errorCount As Long
-    Dim details As String
     Dim workflowConfig As Object
     Dim reconConfigSheetName As String
     Dim resultPrefix As String
+    Dim wsConfig As Worksheet
+    Dim ws1 As Worksheet
+    Dim ws2 As Worksheet
+    Dim wsResults As Worksheet
+    Dim allIDs As Collection
+    Dim matchCount As Long
+    Dim errorCount As Long
+    Dim reconSettings As Object
+    Dim reconData As Object
     
-    ' Get workflow configuration
-    If Len(workflowName) = 0 Then
-        ' Use ActiveWorkflow if no workflow specified
-        If Len(ActiveWorkflow) > 0 Then
-            workflowName = ActiveWorkflow
-        Else
-            workflowName = "Default"
-        End If
-    End If
-    
+    ' Initialize workflow
+    workflowName = ResolveWorkflowName(workflowName)
     Set workflowConfig = GetWorkflowConfig(workflowName)
     reconConfigSheetName = workflowConfig("ReconConfigSheet")
     resultPrefix = workflowConfig("ResultSheetPrefix")
     
-    ' Validate setup
+    ' Validate and prepare
     If Not ValidateSetup(reconConfigSheetName, workflowName) Then Exit Sub
-    
-    ' Clear previous results
     ClearResults resultPrefix
     
-    ' Get configuration
+    ' Load configuration and worksheets
+    Set wsConfig = ThisWorkbook.Worksheets(reconConfigSheetName)
     Set ws1 = ThisWorkbook.Worksheets("Sheet1")
     Set ws2 = ThisWorkbook.Worksheets("Sheet2")
     Set wsResults = GetOrCreateWorksheet(ApplyPrefix(resultPrefix, "All Results"))
-    Set wsConfig = ThisWorkbook.Worksheets(reconConfigSheetName)
     
-    ' Get configuration settings from table
-    idCol1 = GetConfigValue(wsConfig, "Sheet1 ID Column", workflowName)
-    idCol2 = GetConfigValue(wsConfig, "Sheet2 ID Column", workflowName)
-    valueColumns1 = GetConfigValue(wsConfig, "Sheet1 Value Columns", workflowName)
-    valueColumns2 = GetConfigValue(wsConfig, "Sheet2 Value Columns", workflowName)
-    additionalColumns1 = GetConfigValue(wsConfig, "Sheet1 Additional Columns", workflowName)
-    sheet1Filter = GetConfigValue(wsConfig, "Sheet1 Filter", workflowName)
-    sheet2Filter = GetConfigValue(wsConfig, "Sheet2 Filter", workflowName)
+    ' Read all reconciliation settings
+    Set reconSettings = ReadReconciliationConfig(wsConfig, workflowName)
     
-    ' Get tolerance (default to 0.01 if not specified or invalid)
+    ' Build dictionaries and process data
+    Set reconData = BuildReconciliationData(ws1, ws2, reconSettings)
+    Set allIDs = GetUniqueIDs(reconData("Dict1"), reconData("Dict2"))
+    
+    ' Write and split results
+    WriteResults wsResults, allIDs, reconData("Dict1"), reconData("Dict2"), reconData("DictAdditional1"), reconSettings("AdditionalColumns1"), reconSettings("Tolerance"), reconSettings("SortOrder")
+    SplitResults wsResults, ws1, ws2, reconSettings("IdCol1"), reconSettings("IdCol2"), reconSettings("DetailSheet"), reconData("DictDetailRows"), reconData("Dict1"), reconData("Dict2"), reconData("DictAdditional1"), reconData("DictAdditional2"), reconSettings("AdditionalColumns1"), reconSettings("AdditionalColumns2"), resultPrefix, matchCount, errorCount
+    
+    ' Log and report success
+    LogReconciliationSuccess workflowName, reconConfigSheetName, matchCount, errorCount, reconSettings("Tolerance"), reconSettings("DetailSheet"), allIDs.Count
+End Sub
+
+Private Function ReadReconciliationConfig(wsConfig As Worksheet, workflowName As String) As Object
+    Dim settings As Object
+    Dim toleranceStr As String
+    
+    Set settings = CreateObject("Scripting.Dictionary")
+    
+    ' Read ID and column configurations
+    settings("IdCol1") = GetConfigValue(wsConfig, "Sheet1 ID Column", workflowName)
+    settings("IdCol2") = GetConfigValue(wsConfig, "Sheet2 ID Column", workflowName)
+    settings("ValueColumns1") = GetConfigValue(wsConfig, "Sheet1 Value Columns", workflowName)
+    settings("ValueColumns2") = GetConfigValue(wsConfig, "Sheet2 Value Columns", workflowName)
+    settings("AdditionalColumns1") = GetConfigValue(wsConfig, "Sheet1 Additional Columns", workflowName)
+    settings("AdditionalColumns2") = GetConfigValue(wsConfig, "Sheet2 Additional Columns", workflowName)
+    
+    ' Read filter settings
+    settings("Sheet1Filter") = GetConfigValue(wsConfig, "Sheet1 Filter", workflowName)
+    settings("Sheet2Filter") = GetConfigValue(wsConfig, "Sheet2 Filter", workflowName)
+    
+    ' Read tolerance with default
     toleranceStr = GetConfigValue(wsConfig, "Tolerance", workflowName)
     If IsNumeric(toleranceStr) And CDbl(toleranceStr) >= 0 Then
-        tolerance = CDbl(toleranceStr)
+        settings("Tolerance") = CDbl(toleranceStr)
     Else
-        tolerance = 0.01
+        settings("Tolerance") = 0.01
     End If
     
-    ' Get detail sheet setting and additional columns from second sheet
-    detailSheet = Trim(UCase(GetConfigValue(wsConfig, "Detail Sheet", workflowName)))
-    additionalColumns2 = GetConfigValue(wsConfig, "Sheet2 Additional Columns", workflowName)
+    ' Read detail and sort settings
+    settings("DetailSheet") = Trim(UCase(GetConfigValue(wsConfig, "Detail Sheet", workflowName)))
+    settings("SortOrder") = GetConfigValue(wsConfig, "Sort Order", workflowName)
     
-    ' Get sort order setting
-    sortOrder = GetConfigValue(wsConfig, "Sort Order", workflowName)
+    Set ReadReconciliationConfig = settings
+End Function
+
+Private Function BuildReconciliationData(ws1 As Worksheet, ws2 As Worksheet, settings As Object) As Object
+    Dim data As Object
+    Set data = CreateObject("Scripting.Dictionary")
     
-    ' Build dictionaries of ID -> Total (with filtering)
-    Set dict1 = BuildTotalsDictionary(ws1, idCol1, valueColumns1, sheet1Filter)
-    Set dict2 = BuildTotalsDictionary(ws2, idCol2, valueColumns2, sheet2Filter)
+    ' Build totals dictionaries with filtering
+    Set data("Dict1") = BuildTotalsDictionary(ws1, settings("IdCol1"), settings("ValueColumns1"), settings("Sheet1Filter"))
+    Set data("Dict2") = BuildTotalsDictionary(ws2, settings("IdCol2"), settings("ValueColumns2"), settings("Sheet2Filter"))
     
-    ' Build dictionaries of ID -> additional column values (from both sheets)
-    Set dictAdditional1 = BuildAdditionalColumnsDictionary(ws1, idCol1, additionalColumns1)
-    Set dictAdditional2 = BuildAdditionalColumnsDictionary(ws2, idCol2, additionalColumns2)
+    ' Build additional columns dictionaries
+    Set data("DictAdditional1") = BuildAdditionalColumnsDictionary(ws1, settings("IdCol1"), settings("AdditionalColumns1"))
+    Set data("DictAdditional2") = BuildAdditionalColumnsDictionary(ws2, settings("IdCol2"), settings("AdditionalColumns2"))
     
-    ' Build detail rows dictionary if detail mode is enabled
-    Set dictDetailRows = CreateObject("Scripting.Dictionary")
-    If detailSheet = "SHEET1" Then
-        Set dictDetailRows = BuildAllDetailRowsDictionary(ws1, idCol1, additionalColumns1, sheet1Filter)
-    ElseIf detailSheet = "SHEET2" Then
-        Set dictDetailRows = BuildAllDetailRowsDictionary(ws2, idCol2, additionalColumns2, sheet2Filter)
+    ' Build detail rows dictionary if needed
+    Set data("DictDetailRows") = CreateObject("Scripting.Dictionary")
+    If settings("DetailSheet") = "SHEET1" Then
+        Set data("DictDetailRows") = BuildAllDetailRowsDictionary(ws1, settings("IdCol1"), settings("AdditionalColumns1"), settings("Sheet1Filter"))
+    ElseIf settings("DetailSheet") = "SHEET2" Then
+        Set data("DictDetailRows") = BuildAllDetailRowsDictionary(ws2, settings("IdCol2"), settings("AdditionalColumns2"), settings("Sheet2Filter"))
     End If
     
-    ' Get all unique IDs from both sheets
-    Set allIDs = GetUniqueIDs(dict1, dict2)
+    Set BuildReconciliationData = data
+End Function
+
+Private Sub LogReconciliationSuccess(workflowName As String, reconConfigSheetName As String, _
+                                     matchCount As Long, errorCount As Long, _
+                                     tolerance As Double, detailSheet As String, totalRecords As Long)
+    Dim details As String
     
-    ' Write results
-    WriteResults wsResults, allIDs, dict1, dict2, dictAdditional1, additionalColumns1, tolerance, sortOrder
+    details = "Config: " & reconConfigSheetName & " | Matches: " & matchCount & " | Errors: " & errorCount & _
+              " | Tolerance: " & tolerance & " | Detail Mode: " & IIf(Len(Trim(detailSheet)) > 0, detailSheet, "None")
+    LogActivity "Reconciliation", workflowName, details, "Success", totalRecords
     
-    ' Split results into Match Results and Error Results sheets
-    SplitResults wsResults, ws1, ws2, idCol1, idCol2, detailSheet, dictDetailRows, dict1, dict2, dictAdditional1, dictAdditional2, additionalColumns1, additionalColumns2, resultPrefix, matchCount, errorCount
-    
-    ' Log the reconciliation
-    details = "Config: " & reconConfigSheetName & " | Matches: " & matchCount & " | Errors: " & errorCount & " | Tolerance: " & tolerance & " | Detail Mode: " & IIf(Len(Trim(detailSheet)) > 0, detailSheet, "None")
-    LogActivity "Reconciliation", workflowName, details, "Success", allIDs.Count
-    
-    MsgBox "Reconciliation completed! " & allIDs.Count & " records processed (" & matchCount & " matches, " & errorCount & " errors).", vbInformation, "Success"
+    MsgBox "Reconciliation completed! " & totalRecords & " records processed (" & matchCount & " matches, " & errorCount & " errors).", vbInformation, "Success"
 End Sub
 
 Private Function ValidateSetup(reconConfigSheetName As String, workflowName As String) As Boolean
@@ -1048,44 +1061,21 @@ Public Sub RunTransform(Optional workflowName As String = "")
     Dim transformConfigSheetName As String
     Dim resultPrefix As String
     Dim wsTransformConfig As Worksheet
-    Dim transformName As String
-    Dim sourceSheetName As String
-    Dim targetSheetName As String
-    Dim filterExpr As String
-    Dim sortOrder As String
+    Dim transformSettings As Object
     Dim wsSource As Worksheet
     Dim wsTarget As Worksheet
     Dim columnDefs As Collection
-    Dim tblColumns As ListObject
-    Dim row As Long
-    Dim colDef As Object
-    Dim sourceValue As String
     Dim rowCount As Long
-    Dim details As String
-    Dim duration As Double
-    Dim orderColIdx As Long
-    Dim targetColIdx As Long
-    Dim typeColIdx As Long
-    Dim sourceColIdx As Long
-    Dim col As Long
     
     startTime = Timer
     
-    ' Get workflow configuration
-    If Len(workflowName) = 0 Then
-        ' Use ActiveWorkflow if no workflow specified
-        If Len(ActiveWorkflow) > 0 Then
-            workflowName = ActiveWorkflow
-        Else
-            workflowName = "Default"
-        End If
-    End If
-    
+    ' Initialize workflow
+    workflowName = ResolveWorkflowName(workflowName)
     Set workflowConfig = GetWorkflowConfig(workflowName)
     transformConfigSheetName = workflowConfig("TransformConfigSheet")
     resultPrefix = workflowConfig("ResultSheetPrefix")
     
-    ' Check if Transform Config sheet exists
+    ' Validate Transform Config exists
     On Error Resume Next
     Set wsTransformConfig = ThisWorkbook.Worksheets(transformConfigSheetName)
     On Error GoTo ErrorHandler
@@ -1095,54 +1085,107 @@ Public Sub RunTransform(Optional workflowName As String = "")
         Exit Sub
     End If
     
-    ' Read transform settings from TransformSettingsTable (first table)
+    ' Read transform settings and apply prefix to sheet names
+    Set transformSettings = ReadTransformSettings(wsTransformConfig, resultPrefix)
+    
+    ' Validate source sheet and create target sheet
+    Set wsSource = ValidateSourceSheet(transformSettings("SourceSheet"))
+    If wsSource Is Nothing Then Exit Sub
+    
+    Set wsTarget = GetOrCreateWorksheet(transformSettings("TargetSheet"))
+    wsTarget.Cells.Clear
+    
+    ' Read column definitions
+    Set columnDefs = ReadTransformColumnDefinitions(wsTransformConfig)
+    If columnDefs Is Nothing Then Exit Sub
+    
+    ' Execute transformation
+    ApplyTransformation wsSource, wsTarget, columnDefs, transformSettings("Filter"), transformSettings("SortOrder")
+    
+    ' Calculate results and log success
+    rowCount = wsTarget.Cells(wsTarget.Rows.Count, 1).End(xlUp).row - 1
+    LogTransformSuccess workflowName, transformSettings, rowCount, Timer - startTime
+    
+    Exit Sub
+    
+ErrorHandler:
+    LogActivity "Transformation", workflowName, "Error: " & Err.Description, "Error", 0
+    MsgBox "Error during transformation: " & Err.Description, vbCritical, "Error"
+End Sub
+
+Private Function ReadTransformSettings(wsTransformConfig As Worksheet, resultPrefix As String) As Object
+    Dim settings As Object
+    Dim transformName As String
+    Dim sourceSheetName As String
+    Dim targetSheetName As String
+    
+    Set settings = CreateObject("Scripting.Dictionary")
+    
+    ' Read from TransformSettingsTable
     transformName = GetConfigValue(wsTransformConfig, "Name")
     sourceSheetName = GetConfigValue(wsTransformConfig, "Source Sheet")
     targetSheetName = GetConfigValue(wsTransformConfig, "Target Sheet")
-    filterExpr = GetConfigValue(wsTransformConfig, "Filter")
-    sortOrder = GetConfigValue(wsTransformConfig, "Sort Order")
     
     If Len(transformName) = 0 Then transformName = "Transform"
     
     If Len(sourceSheetName) = 0 Or Len(targetSheetName) = 0 Then
         MsgBox "Transform configuration incomplete. Source Sheet and Target Sheet are required in TransformSettingsTable.", vbCritical, "Error"
-        Exit Sub
+        Set ReadTransformSettings = Nothing
+        Exit Function
     End If
     
-    ' Apply workflow prefix to sheet names (for reconciliation result sheets)
-    sourceSheetName = ApplyPrefix(resultPrefix, sourceSheetName)
-    targetSheetName = ApplyPrefix(resultPrefix, targetSheetName)
+    ' Apply workflow prefix to sheet names
+    settings("Name") = transformName
+    settings("SourceSheet") = ApplyPrefix(resultPrefix, sourceSheetName)
+    settings("TargetSheet") = ApplyPrefix(resultPrefix, targetSheetName)
+    settings("Filter") = GetConfigValue(wsTransformConfig, "Filter")
+    settings("SortOrder") = GetConfigValue(wsTransformConfig, "Sort Order")
     
-    ' Verify source sheet exists
+    Set ReadTransformSettings = settings
+End Function
+
+Private Function ValidateSourceSheet(sourceSheetName As String) As Worksheet
+    Dim wsSource As Worksheet
+    
     On Error Resume Next
     Set wsSource = ThisWorkbook.Worksheets(sourceSheetName)
-    On Error GoTo ErrorHandler
+    On Error GoTo 0
     
     If wsSource Is Nothing Then
         MsgBox "Source sheet '" & sourceSheetName & "' not found.", vbCritical, "Error"
-        Exit Sub
     End If
     
-    ' Create or get target sheet
-    Set wsTarget = GetOrCreateWorksheet(targetSheetName)
-    wsTarget.Cells.Clear ' Clear existing content
+    Set ValidateSourceSheet = wsSource
+End Function
+
+Private Function ReadTransformColumnDefinitions(wsTransformConfig As Worksheet) As Collection
+    Dim columnDefs As Collection
+    Dim tblColumns As ListObject
+    Dim orderColIdx As Long
+    Dim targetColIdx As Long
+    Dim typeColIdx As Long
+    Dim sourceColIdx As Long
+    Dim col As Long
+    Dim row As Long
+    Dim colDef As Object
+    Dim sourceValue As String
     
-    ' Read column definitions from TransformColumnsTable (second table)
     Set columnDefs = New Collection
     
-    ' Get second table in Transform Config sheet
+    ' Get second table (TransformColumnsTable)
     On Error Resume Next
     If wsTransformConfig.ListObjects.Count >= 2 Then
         Set tblColumns = wsTransformConfig.ListObjects(2)
     End If
-    On Error GoTo ErrorHandler
+    On Error GoTo 0
     
     If tblColumns Is Nothing Then
         MsgBox "TransformColumnsTable (second table) not found in Transform Config sheet.", vbCritical, "Error"
-        Exit Sub
+        Set ReadTransformColumnDefinitions = Nothing
+        Exit Function
     End If
     
-    ' Find column indexes in TransformColumnsTable
+    ' Find column indexes
     For col = 1 To tblColumns.ListColumns.Count
         Select Case UCase(Trim(tblColumns.HeaderRowRange.Cells(1, col).value))
             Case "ORDER"
@@ -1158,10 +1201,11 @@ Public Sub RunTransform(Optional workflowName As String = "")
     
     If orderColIdx = 0 Or targetColIdx = 0 Or typeColIdx = 0 Or sourceColIdx = 0 Then
         MsgBox "TransformColumnsTable must have columns: Order, Target Column, Type, Source", vbCritical, "Error"
-        Exit Sub
+        Set ReadTransformColumnDefinitions = Nothing
+        Exit Function
     End If
     
-    ' Read column definitions from table
+    ' Read column definitions
     For row = 1 To tblColumns.ListRows.Count
         Set colDef = CreateObject("Scripting.Dictionary")
         
@@ -1169,7 +1213,6 @@ Public Sub RunTransform(Optional workflowName As String = "")
         colDef("TargetColumn") = Trim(CStr(tblColumns.DataBodyRange.Cells(row, targetColIdx).value))
         colDef("Type") = Trim(UCase(CStr(tblColumns.DataBodyRange.Cells(row, typeColIdx).value)))
         
-        ' Read source as text/value
         sourceValue = Trim(CStr(tblColumns.DataBodyRange.Cells(row, sourceColIdx).value))
         
         ' For FORMULA type, ensure it starts with =
@@ -1180,37 +1223,30 @@ Public Sub RunTransform(Optional workflowName As String = "")
         End If
         
         colDef("Source") = sourceValue
-        
         columnDefs.Add colDef
     Next row
     
     If columnDefs.Count = 0 Then
         MsgBox "No column definitions found in TransformColumnsTable.", vbCritical, "Error"
-        Exit Sub
+        Set ReadTransformColumnDefinitions = Nothing
+        Exit Function
     End If
     
-    ' Apply transformation with filtering and sorting
-    ApplyTransformation wsSource, wsTarget, columnDefs, filterExpr, sortOrder
+    Set ReadTransformColumnDefinitions = columnDefs
+End Function
+
+Private Sub LogTransformSuccess(workflowName As String, transformSettings As Object, _
+                                rowCount As Long, duration As Double)
+    Dim details As String
     
-    ' Determine row count
-    rowCount = wsTarget.Cells(wsTarget.Rows.Count, 1).End(xlUp).row - 1 ' Subtract header
-    
-    ' Log the transformation
-    duration = Timer - startTime
-    details = "Transform: " & transformName & " | Source: " & sourceSheetName & " | Target: " & targetSheetName & " | Duration: " & Format(duration, "0.0") & "s"
+    details = "Transform: " & transformSettings("Name") & " | Source: " & transformSettings("SourceSheet") & _
+              " | Target: " & transformSettings("TargetSheet") & " | Duration: " & Format(duration, "0.0") & "s"
     LogActivity "Transformation", workflowName, details, "Success", rowCount
     
     MsgBox "Transformation completed successfully!" & vbCrLf & _
-           "Transform: " & transformName & vbCrLf & _
-           "Source: " & sourceSheetName & vbCrLf & _
-           "Target: " & targetSheetName, vbInformation, "Success"
-    
-    Exit Sub
-    
-ErrorHandler:
-    ' Log error
-    LogActivity "Transformation", workflowName, "Error: " & Err.Description, "Error", 0
-    MsgBox "Error during transformation: " & Err.Description, vbCritical, "Error"
+           "Transform: " & transformSettings("Name") & vbCrLf & _
+           "Source: " & transformSettings("SourceSheet") & vbCrLf & _
+           "Target: " & transformSettings("TargetSheet"), vbInformation, "Success"
 End Sub
 
 Private Sub ApplyTransformation(wsSource As Worksheet, wsTarget As Worksheet, columnDefs As Collection, Optional filterExpr As String = "", Optional sortOrder As String = "")
