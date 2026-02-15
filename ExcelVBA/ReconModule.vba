@@ -1250,17 +1250,24 @@ Private Sub LogTransformSuccess(workflowName As String, transformSettings As Obj
 End Sub
 
 Private Sub ApplyTransformation(wsSource As Worksheet, wsTarget As Worksheet, columnDefs As Collection, Optional filterExpr As String = "", Optional sortOrder As String = "")
-    ' Write headers
     Dim colDef As Object
     Dim col As Long
+    Dim lastSourceRow As Long
+    Dim sourceRow As Long
+    Dim targetRow As Long
+    Dim sourceColIndex As Long
+    Dim lastCol As Long
+    Dim lastRow As Long
+    Dim tableRange As Range
+    Dim tbl As ListObject
     
+    ' Write headers
     For Each colDef In columnDefs
         col = colDef("Order")
         wsTarget.Cells(1, col).value = colDef("TargetColumn")
     Next colDef
     
     ' Determine source data range
-    Dim lastSourceRow As Long
     lastSourceRow = wsSource.Cells(wsSource.Rows.Count, 1).End(xlUp).row
     
     If lastSourceRow < 2 Then
@@ -1269,8 +1276,6 @@ Private Sub ApplyTransformation(wsSource As Worksheet, wsTarget As Worksheet, co
     End If
     
     ' Populate rows with EXISTING and STATIC columns only (applying filter)
-    Dim sourceRow As Long, targetRow As Long
-    Dim sourceColIndex As Long
     targetRow = 1 ' Start at 1, will increment to 2 for first data row
     
     For sourceRow = 2 To lastSourceRow
@@ -1321,12 +1326,9 @@ NextSourceRow:
     End If
     
     ' Create table with the data we have
-    Dim lastCol As Long
     lastCol = columnDefs.Count
-    Dim lastRow As Long
     lastRow = targetRow ' Use actual target row count after filtering
     
-    Dim tableRange As Range
     Set tableRange = wsTarget.Range(wsTarget.Cells(1, 1), wsTarget.Cells(lastRow, lastCol))
     
     ' Delete existing table if present
@@ -1335,7 +1337,6 @@ NextSourceRow:
     On Error GoTo 0
     
     ' Create new table
-    Dim tbl As ListObject
     Set tbl = wsTarget.ListObjects.Add(xlSrcRange, tableRange, , xlYes)
     tbl.TableStyle = "TableStyleMedium2"
     
@@ -1360,25 +1361,27 @@ End Sub
 Private Sub ApplySorting(ws As Worksheet, sortOrder As String)
     ' Apply sorting to worksheet table based on sort order specification
     ' sortOrder format: "Column1 ASC, Column2 DESC, Column3" (default is ASC)
+    Dim tbl As ListObject
+    Dim sortSpecs() As String
+    Dim i As Long
+    Dim spec As String
+    Dim colName As String
+    Dim direction As Long
+    Dim colIndex As Long
     
     If Len(Trim(sortOrder)) = 0 Then Exit Sub
     
     ' Get the table on this worksheet
     If ws.ListObjects.Count = 0 Then Exit Sub
-    Dim tbl As ListObject
     Set tbl = ws.ListObjects(1)
     
     ' Parse sort specifications
-    Dim sortSpecs() As String
     sortSpecs = Split(sortOrder, ",")
     
     ' Clear existing sort
     tbl.Sort.SortFields.Clear
     
     ' Add each sort field
-    Dim i As Long, spec As String, colName As String, direction As Long
-    Dim colIndex As Long
-    
     For i = 0 To UBound(sortSpecs)
         spec = Trim(sortSpecs(i))
         
@@ -1571,9 +1574,6 @@ Private Sub WriteDetailMatchResults(wsMatch As Worksheet, wsAllResults As Worksh
     Dim id As String
     Dim total1 As Double
     Dim total2 As Double
-    Dim detailRows As Collection
-    Dim detailRow As Object
-    Dim summaryDict As Object
     Dim isMatchValue As Variant
     
     Set tblAll = wsAllResults.ListObjects("ReconResultsTable")
@@ -1596,17 +1596,9 @@ Private Sub WriteDetailMatchResults(wsMatch As Worksheet, wsAllResults As Worksh
             total2 = wsAllResults.Cells(row, sheet2TotalCol).value
             matchCount = matchCount + 1
             
-            If dictDetailRows.Exists(id) Then
-                Set detailRows = dictDetailRows(id)
-                Set summaryDict = GetSummaryDict(detailSheet, id, dictAdditional1, dictAdditional2)
-                
-                For Each detailRow In detailRows
-                    WriteDetailMatchRow wsMatch, matchRow, id, detailRow, summaryDict, _
-                                       detailSheet, additionalCols1, additionalCols2, _
-                                       hasAdditional1, hasAdditional2, total1, total2
-                    matchRow = matchRow + 1
-                Next detailRow
-            End If
+            ProcessMatchedDetailRows wsMatch, matchRow, id, total1, total2, detailSheet, _
+                                    dictDetailRows, dictAdditional1, dictAdditional2, _
+                                    additionalCols1, additionalCols2, hasAdditional1, hasAdditional2
         End If
     Next row
     
@@ -1614,6 +1606,29 @@ Private Sub WriteDetailMatchResults(wsMatch As Worksheet, wsAllResults As Worksh
     If matchRow > 2 Then
         FormatDetailMatchTable wsMatch, matchRow, lastHeaderCol, detailSheet, additionalCols1, additionalCols2, hasAdditional1, hasAdditional2
     End If
+End Sub
+
+Private Sub ProcessMatchedDetailRows(wsMatch As Worksheet, ByRef matchRow As Long, _
+                                     id As String, total1 As Double, total2 As Double, _
+                                     detailSheet As String, dictDetailRows As Object, _
+                                     dictAdditional1 As Object, dictAdditional2 As Object, _
+                                     additionalCols1() As String, additionalCols2() As String, _
+                                     hasAdditional1 As Boolean, hasAdditional2 As Boolean)
+    Dim detailRows As Collection
+    Dim detailRow As Object
+    Dim summaryDict As Object
+    
+    If Not dictDetailRows.Exists(id) Then Exit Sub
+    
+    Set detailRows = dictDetailRows(id)
+    Set summaryDict = GetSummaryDict(detailSheet, id, dictAdditional1, dictAdditional2)
+    
+    For Each detailRow In detailRows
+        WriteDetailMatchRow wsMatch, matchRow, id, detailRow, summaryDict, _
+                           detailSheet, additionalCols1, additionalCols2, _
+                           hasAdditional1, hasAdditional2, total1, total2
+        matchRow = matchRow + 1
+    Next detailRow
 End Sub
 
 Private Sub ParseAdditionalColumns(additionalColumns1 As String, additionalColumns2 As String, _
