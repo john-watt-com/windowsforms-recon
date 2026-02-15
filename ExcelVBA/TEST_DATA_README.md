@@ -1,92 +1,96 @@
-# Test Data Files
+# Test Data Overview
 
-## Default Workflow Test Files
+## Current Test Files (for New Config Structure)
 
-**TestData_Default_Sheet1.csv** - Summary level (6 records, unique IDs)
-- Columns: ID, Value, ParentID
-- Each ID appears once
+### TestData_Summary.csv (Summary Level)
+**Purpose:** Summary-level data with one row per AccountID
 
-**TestData_Default_Sheet2.csv** - Detail level (12 records)
-- Columns: ID, Value-Plus, Value-Minus, Field1, Field2, Field3
-- Multiple rows per ID for records 2-7
+**Structure:**
+- **AccountID**: Unique identifier for matching
+- **AccountName**: Account description
+- **Type**: Transaction type (Fee, Loan, Interest) - enables workflow filtering
+- **Amount**: Total amount for this account
+- **Status**: Transaction status (Active, Cancelled) - additional filter option
 
-### Expected Results (Default Workflow):
+**Records:** 11 unique accounts across Fee (7), Loan (2), Interest (2) types
 
-**Matches (within 0.03 tolerance):**
-- ID 1: 100.00 = 100.00 (exact match)
-- ID 2: 200.00 = 200.00 (2 detail rows: 150+50)
-- ID 3: 150.50 ≈ 150.50 (2 detail rows: 100.50+50.02-0.02, within tolerance)
-- ID 4: 75.25 = 75.25 (exact match)
-- ID 5: 300.00 = 300.00 (2 detail rows: 200+100)
+### TestData_Detail.csv (Detail Level)
+**Purpose:** Detail-level data with multiple rows per AccountID that aggregate to Summary
 
-**Errors:**
-- ID 6: 125.00 ≠ 125.00 (2 detail rows: 100+30-5, difference beyond tolerance)
-- ID 7: Not in Sheet1 (only in Sheet2, 2 rows: 50+50=100)
+**Structure:**
+- **AccountID**: Identifier for matching
+- **AccountName**: Account description
+- **Type**: Transaction type (Fee, Loan, Interest)
+- **Amount**: Line item amount
+- **LineItem**: Description of detail line
+- **Status**: Transaction status
 
-**Match Results with Detail Expansion (Detail Sheet = Sheet2):**
-- Each detail row from Sheet2 shown with Sheet1's ParentID joined
-- Example for ID 2: Two rows, both showing ParentID=A2, Sheet1 Total=200, Sheet2 Total=200
+**Records:** 24 detail rows (2-3 rows per account) that sum to Summary amounts
 
----
+## Test Scenarios
 
-## Summary Workflow Test Files
+### Fee Recon Workflow
+**Filter:** Type="Fee"
+**Tolerance:** 0.01
+**Reconciliation Mode:** Summary vs Detail aggregation
 
-**TestData_Summary_Sheet1.csv** - Detail level (9 records)
-- Columns: ID, Amount, Region, Department
-- Multiple rows per ID for A001, A003, A004
+After filtering for Fee records and aggregating Detail by AccountID:
 
-**TestData_Summary_Sheet2.csv** - Detail level (10 records)
-- Columns: ID, Debits, Credits, AccountCode, Source
-- Multiple rows per ID for A001, A003, A005, A006
-
-### Expected Results (Summary Workflow):
-
-**Aggregated comparison (No Detail Sheet):**
-
-**Matches (within 0.01 tolerance):**
-- A001: 250.00 = 250.00 (Sheet1: 100+150, Sheet2: 300-50)
-- A002: 200.00 = 200.00 (Sheet1: 200, Sheet2: 200)
-- A003: 150.50 = 150.50 (Sheet1: 50+75.50+25, Sheet2: 100+50.50)
+**Matches (within tolerance):**
+- 1001: Summary $150.00 = Detail $150.00 (100+50)
+- 1002: Summary $225.50 = Detail $225.50 (150.50+75)
+- 1006: Summary $300.00 = Detail $300.00 (200+100)
+- 1010: Summary $210.00 = Detail $210.00 (150+60)
 
 **Errors:**
-- A004: 500.00 = 500.00 (Sheet1: 300+200, Sheet2: 520-20 = exact match but large amounts)
-- A005: 125.00 ≠ 125.00 (Sheet1: 125, Sheet2: 100+25, exact match)
-- A006: No data in Sheet1 (only in Sheet2: 75+45=120)
+- 1004: Summary $175.00 vs Detail $175.25 (100+75.25) - DIFF $0.25
+- 1007: Summary $425.75 vs Detail $425.50 (300+125.50) - DIFF $0.25
+- 1011: Summary $275.50 vs Detail $280.00 (200+80) - DIFF $4.50
+- 1013: Only in Detail $195.00 (120+75) - MISSING FROM SUMMARY
 
-**Match Results:**
-- Single aggregated row per ID
-- Additional columns from both sheets included
-- Region/Department from Sheet1, AccountCode/Source from Sheet2
+**Filtered out:** 1003 (Loan), 1005 (Interest), 1008 (Loan), 1012 (Interest)
+
+### Loan Recon Workflow
+**Filter:** Type="Loan"
+**Records:** 
+- 1003: Summary $5000.00 = Detail $5000.00 (3000+2000)
+- 1008: Summary $10000.00 = Detail $10000.00 (7000+3000)
+
+### Interest Recon Workflow
+**Filter:** Type="Interest"
+**Records:** 
+- 1005: Summary $50.00 = Detail $50.00 (30+20)
+- 1012: Summary $75.00 = Detail $75.00 (45+30)
+
+## Expected Results (Fee Recon)
+- **Summary Fee records**: 7
+- **Detail Fee records**: 16 rows (aggregated to 8 unique IDs)
+- **Matches**: 4
+- **Errors**: 4 (3 amount diffs + 1 missing from summary)
+
+## Loading Instructions
+1. Import TestData_Summary.csv as source data (Sheet1 or configured Summary Sheet)
+2. Import TestData_Detail.csv as comparison data (Sheet2 or configured Detail Sheet)
+3. Select workflow: "Fee Recon", "Loan Recon", or "Interest Recon"
+4. Run Reconciliation
+5. Verify results match expected outcomes above
 
 ---
 
-## Testing Instructions
+## Legacy Test Files (Old Config Format)
 
-### For Default Workflow:
-1. Select "Default" workflow from dropdown
-2. Load TestData_Default_Sheet1.csv into Sheet1
-3. Load TestData_Default_Sheet2.csv into Sheet2
-4. Run Reconciliation
-5. Check Match Results - should see detail expansion with ParentID column
-6. Run Transform - should create Export sheet with ParentID populated
+### TestData_Default_Sheet1.csv / TestData_Default_Sheet2.csv
+**Status:** Removed - replaced by new multi-workflow test data
 
-### For Summary Workflow:
-1. Select "Summary Comparison" workflow from dropdown
-2. Load TestData_Summary_Sheet1.csv into Sheet1
-3. Load TestData_Summary_Sheet2.csv into Sheet2
-4. Run Reconciliation
-5. Check Match Results - should see aggregated summary (1 row per ID)
-6. Run Transform - should create Summary Export with Region, Department, AccountCode, Source columns
+**Old Structure:**
+- Sheet1: ID, Value, ParentID (6 summary records)
+- Sheet2: ID, Value-Plus, Value-Minus, Field1-3 (12 detail records)
+- Tested detail expansion with ParentID join
 
----
+### TestData_Summary_Sheet1.csv / TestData_Summary_Sheet2.csv
+**Status:** Still available (if needed for legacy testing)
 
-## Key Differences to Validate
-
-| Aspect | Default Workflow | Summary Workflow |
-|--------|-----------------|------------------|
-| Sheet1 | Summary (unique IDs) | Detail (multiple per ID) |
-| Sheet2 | Detail (multiple per ID) | Detail (multiple per ID) |
-| Match Results | Detail expanded | Aggregated summary |
-| Row Count | Many rows per matched ID | One row per matched ID |
-| Additional Columns | Only Sheet1 (ParentID) | Both sheets (Region, Dept, Acct, Source) |
-| Detail Sheet Setting | SHEET2 | (blank) |
+**Structure:**
+- Sheet1: ID, Amount, Region, Department (9 detail records)
+- Sheet2: ID, Debits, Credits, AccountCode, Source (10 detail records)
+- Multiple rows per ID, tests aggregated summary reconciliation

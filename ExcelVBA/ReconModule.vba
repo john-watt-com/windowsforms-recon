@@ -9,10 +9,11 @@ Public ActiveWorkflow As String
 ' Get workflow configuration from WorkflowsTable
 Private Function GetWorkflowConfig(workflowName As String) As Object
     ' Returns Dictionary with: ReconConfigSheet, TransformConfigSheet, ResultSheetPrefix
+    ' Config sheet names are now hardcoded, only ResultSheetPrefix comes from Workflows table
     Dim workflowConfig As Object
     Set workflowConfig = CreateObject("Scripting.Dictionary")
     
-    ' Default configuration if workflow not found
+    ' Hardcoded configuration sheet names
     workflowConfig("ReconConfigSheet") = "Recon Config"
     workflowConfig("TransformConfigSheet") = "Transform Config"
     workflowConfig("ResultSheetPrefix") = ""
@@ -20,11 +21,11 @@ Private Function GetWorkflowConfig(workflowName As String) As Object
     ' Check if Workflows sheet exists
     Dim wsWorkflows As Worksheet
     On Error Resume Next
-    '' Get workflow configuration for a workflow name (new multi-workflow config)
+    Set wsWorkflows = ThisWorkbook.Worksheets("Workflows")
     On Error GoTo 0
     
     If wsWorkflows Is Nothing Then
-        ' No Workflows sheet, return defaults
+        ' No Workflows sheet, return defaults with hardcoded sheet names
         Set GetWorkflowConfig = workflowConfig
         Exit Function
     End If
@@ -43,25 +44,21 @@ Private Function GetWorkflowConfig(workflowName As String) As Object
         Exit Function
     End If
     
-    ' Find column indexes
-    Dim nameCol As Long, reconCol As Long, transformCol As Long, prefixCol As Long
+    ' Find column indexes (only need Workflow Name and Result Sheet Prefix)
+    Dim nameCol As Long, prefixCol As Long
     Dim col As Long
     
     For col = 1 To tblWorkflows.ListColumns.Count
         Select Case UCase(Trim(tblWorkflows.HeaderRowRange.Cells(1, col).value))
             Case "WORKFLOW NAME"
                 nameCol = col
-            Case "RECON CONFIG SHEET"
-                reconCol = col
-            Case "TRANSFORM CONFIG SHEET"
-                transformCol = col
-            Case "RESULT SHEET PREFIX"
+            Case "RESULT SHEET PREFIX", "RESULT PREFIX"
                 prefixCol = col
         End Select
     Next col
     
-    If nameCol = 0 Or reconCol = 0 Or transformCol = 0 Then
-        ' Required columns not found, return defaults
+    If nameCol = 0 Then
+        ' Required column not found, return defaults
         Set GetWorkflowConfig = workflowConfig
         Exit Function
     End If
@@ -73,14 +70,10 @@ Private Function GetWorkflowConfig(workflowName As String) As Object
     
     For row = 1 To tblWorkflows.ListRows.Count
         If UCase(Trim(tblWorkflows.DataBodyRange.Cells(row, nameCol).value)) = workflowNameUpper Then
-            ' Found the workflow
-            workflowConfig("ReconConfigSheet") = Trim(CStr(tblWorkflows.DataBodyRange.Cells(row, reconCol).value))
-            workflowConfig("TransformConfigSheet") = Trim(CStr(tblWorkflows.DataBodyRange.Cells(row, transformCol).value))
-            
+            ' Found the workflow - read result prefix if column exists
             If prefixCol > 0 Then
                 workflowConfig("ResultSheetPrefix") = Trim(CStr(tblWorkflows.DataBodyRange.Cells(row, prefixCol).value))
             End If
-            
             Exit For
         End If
     Next row
@@ -129,7 +122,7 @@ Public Sub RunReconciliation(Optional workflowName As String = "")
     resultPrefix = workflowConfig("ResultSheetPrefix")
     
     ' Validate setup
-    If Not ValidateSetup(reconConfigSheetName) Then Exit Sub
+    If Not ValidateSetup(reconConfigSheetName, workflowName) Then Exit Sub
     
     ' Clear previous results
     ClearResults resultPrefix
@@ -141,17 +134,17 @@ Public Sub RunReconciliation(Optional workflowName As String = "")
     Set wsConfig = ThisWorkbook.Worksheets(reconConfigSheetName)
     
     ' Get configuration settings from table
-    idCol1 = GetConfigValue(wsConfig, "Sheet1 ID Column")
-    idCol2 = GetConfigValue(wsConfig, "Sheet2 ID Column")
-    valueColumns1 = GetConfigValue(wsConfig, "Sheet1 Value Columns")
-    valueColumns2 = GetConfigValue(wsConfig, "Sheet2 Value Columns")
-    additionalColumns1 = GetConfigValue(wsConfig, "Sheet1 Additional Columns")
-    sheet1Filter = GetConfigValue(wsConfig, "Sheet1 Filter")
-    sheet2Filter = GetConfigValue(wsConfig, "Sheet2 Filter")
+    idCol1 = GetConfigValue(wsConfig, "Sheet1 ID Column", workflowName)
+    idCol2 = GetConfigValue(wsConfig, "Sheet2 ID Column", workflowName)
+    valueColumns1 = GetConfigValue(wsConfig, "Sheet1 Value Columns", workflowName)
+    valueColumns2 = GetConfigValue(wsConfig, "Sheet2 Value Columns", workflowName)
+    additionalColumns1 = GetConfigValue(wsConfig, "Sheet1 Additional Columns", workflowName)
+    sheet1Filter = GetConfigValue(wsConfig, "Sheet1 Filter", workflowName)
+    sheet2Filter = GetConfigValue(wsConfig, "Sheet2 Filter", workflowName)
     
     ' Get tolerance (default to 0.01 if not specified or invalid)
     Dim toleranceStr As String
-    toleranceStr = GetConfigValue(wsConfig, "Tolerance")
+    toleranceStr = GetConfigValue(wsConfig, "Tolerance", workflowName)
     If IsNumeric(toleranceStr) And CDbl(toleranceStr) >= 0 Then
         tolerance = CDbl(toleranceStr)
     Else
@@ -159,12 +152,12 @@ Public Sub RunReconciliation(Optional workflowName As String = "")
     End If
     
     ' Get detail sheet setting and additional columns from second sheet
-    detailSheet = Trim(UCase(GetConfigValue(wsConfig, "Detail Sheet")))
-    additionalColumns2 = GetConfigValue(wsConfig, "Sheet2 Additional Columns")
+    detailSheet = Trim(UCase(GetConfigValue(wsConfig, "Detail Sheet", workflowName)))
+    additionalColumns2 = GetConfigValue(wsConfig, "Sheet2 Additional Columns", workflowName)
     
     ' Get sort order setting
     Dim sortOrder As String
-    sortOrder = GetConfigValue(wsConfig, "Sort Order")
+    sortOrder = GetConfigValue(wsConfig, "Sort Order", workflowName)
     
     ' Build dictionaries of ID -> Total (with filtering)
     Set dict1 = BuildTotalsDictionary(ws1, idCol1, valueColumns1, sheet1Filter)
@@ -200,7 +193,7 @@ Public Sub RunReconciliation(Optional workflowName As String = "")
     MsgBox "Reconciliation completed! " & allIDs.Count & " records processed (" & matchCount & " matches, " & errorCount & " errors).", vbInformation, "Success"
 End Sub
 
-Private Function ValidateSetup(reconConfigSheetName As String) As Boolean
+Private Function ValidateSetup(reconConfigSheetName As String, workflowName As String) As Boolean
     ValidateSetup = False
     
     ' Check worksheets exist
@@ -233,10 +226,10 @@ Private Function ValidateSetup(reconConfigSheetName As String) As Boolean
     Dim idCol1 As String, idCol2 As String
     Dim valueColumns1 As String, valueColumns2 As String
     
-    idCol1 = GetConfigValue(wsConfig, "Sheet1 ID Column")
-    idCol2 = GetConfigValue(wsConfig, "Sheet2 ID Column")
-    valueColumns1 = GetConfigValue(wsConfig, "Sheet1 Value Columns")
-    valueColumns2 = GetConfigValue(wsConfig, "Sheet2 Value Columns")
+    idCol1 = GetConfigValue(wsConfig, "Sheet1 ID Column", workflowName)
+    idCol2 = GetConfigValue(wsConfig, "Sheet2 ID Column", workflowName)
+    valueColumns1 = GetConfigValue(wsConfig, "Sheet1 Value Columns", workflowName)
+    valueColumns2 = GetConfigValue(wsConfig, "Sheet2 Value Columns", workflowName)
     
     If Len(idCol1) = 0 Or Len(idCol2) = 0 Then
         MsgBox "Please specify both ID columns in Recon Config table.", vbCritical, "Error"
@@ -250,7 +243,7 @@ Private Function ValidateSetup(reconConfigSheetName As String) As Boolean
     
     ' Check for valid detail sheet configuration
     Dim detailSheet As String
-    detailSheet = Trim(UCase(GetConfigValue(wsConfig, "Detail Sheet")))
+    detailSheet = Trim(UCase(GetConfigValue(wsConfig, "Detail Sheet", workflowName)))
     If Len(detailSheet) > 0 And detailSheet <> "SHEET1" And detailSheet <> "SHEET2" Then
         MsgBox "Detail Sheet must be either 'Sheet1' or 'Sheet2' (case-insensitive) if specified.", vbCritical, "Error"
         Exit Function
@@ -525,8 +518,8 @@ Private Function FindColumnIndex(ws As Worksheet, columnName As String) As Long
     FindColumnIndex = 0
 End Function
 
-Private Function GetConfigValue(wsConfig As Worksheet, settingName As String) As String
-    ' Get configuration value from config table by setting name (case-insensitive)
+Private Function GetConfigValue(wsConfig As Worksheet, settingName As String, Optional workflowName As String = "") As String
+    ' Get configuration value from config table by setting name and optional workflow filter (case-insensitive)
     GetConfigValue = ""
     
     ' Get the first table in the config sheet
@@ -539,29 +532,44 @@ Private Function GetConfigValue(wsConfig As Worksheet, settingName As String) As
     
     If tblConfig Is Nothing Then Exit Function
     
-    ' Find Setting and Value column indexes
-    Dim settingColIndex As Long, valueColIndex As Long
+    ' Find Setting, Value, and optional Workflow column indexes
+    Dim settingColIndex As Long, valueColIndex As Long, workflowColIndex As Long
     Dim col As Long
     
     For col = 1 To tblConfig.ListColumns.Count
-        If UCase(Trim(tblConfig.HeaderRowRange.Cells(1, col).value)) = "SETTING" Then
-            settingColIndex = col
-        ElseIf UCase(Trim(tblConfig.HeaderRowRange.Cells(1, col).value)) = "VALUE" Then
-            valueColIndex = col
-        End If
+        Select Case UCase(Trim(tblConfig.HeaderRowRange.Cells(1, col).value))
+            Case "SETTING"
+                settingColIndex = col
+            Case "VALUE"
+                valueColIndex = col
+            Case "WORKFLOW"
+                workflowColIndex = col
+        End Select
     Next col
     
     If settingColIndex = 0 Or valueColIndex = 0 Then Exit Function
     
-    ' Search for the setting (case-insensitive)
+    ' Search for the setting (case-insensitive) and optional workflow match
     Dim row As Long
-    Dim settingNameUpper As String
+    Dim settingNameUpper As String, workflowNameUpper As String
     settingNameUpper = UCase(Trim(settingName))
+    workflowNameUpper = UCase(Trim(workflowName))
     
     For row = 1 To tblConfig.ListRows.Count
+        ' Check if setting matches
         If UCase(Trim(CStr(tblConfig.DataBodyRange.Cells(row, settingColIndex).value))) = settingNameUpper Then
-            GetConfigValue = Trim(CStr(tblConfig.DataBodyRange.Cells(row, valueColIndex).value))
-            Exit Function
+            ' If workflow filtering is requested and Workflow column exists
+            If Len(workflowName) > 0 And workflowColIndex > 0 Then
+                ' Check if workflow matches
+                If UCase(Trim(CStr(tblConfig.DataBodyRange.Cells(row, workflowColIndex).value))) = workflowNameUpper Then
+                    GetConfigValue = Trim(CStr(tblConfig.DataBodyRange.Cells(row, valueColIndex).value))
+                    Exit Function
+                End If
+            Else
+                ' No workflow filtering - return first match
+                GetConfigValue = Trim(CStr(tblConfig.DataBodyRange.Cells(row, valueColIndex).value))
+                Exit Function
+            End If
         End If
     Next row
 End Function
@@ -1045,6 +1053,8 @@ Public Sub RunTransform(Optional workflowName As String = "")
     Set workflowConfig = GetWorkflowConfig(workflowName)
     Dim transformConfigSheetName As String
     transformConfigSheetName = workflowConfig("TransformConfigSheet")
+    Dim resultPrefix As String
+    resultPrefix = workflowConfig("ResultSheetPrefix")
     
     ' Check if Transform Config sheet exists
     Dim wsTransformConfig As Worksheet
@@ -1057,19 +1067,26 @@ Public Sub RunTransform(Optional workflowName As String = "")
         Exit Sub
     End If
     
-    ' Read transform configuration (starts at row 2)
+    ' Read transform settings from TransformSettingsTable (first table)
     Dim transformName As String, sourceSheetName As String, targetSheetName As String
-    Dim configRow As Long
-    configRow = 2 ' Row with transform name, source, and target
+    Dim filterExpr As String, sortOrder As String
     
-    transformName = Trim(CStr(wsTransformConfig.Cells(configRow, 1).value))
-    sourceSheetName = Trim(CStr(wsTransformConfig.Cells(configRow, 2).value))
-    targetSheetName = Trim(CStr(wsTransformConfig.Cells(configRow, 3).value))
+    transformName = GetConfigValue(wsTransformConfig, "Name")
+    sourceSheetName = GetConfigValue(wsTransformConfig, "Source Sheet")
+    targetSheetName = GetConfigValue(wsTransformConfig, "Target Sheet")
+    filterExpr = GetConfigValue(wsTransformConfig, "Filter")
+    sortOrder = GetConfigValue(wsTransformConfig, "Sort Order")
     
-    If Len(transformName) = 0 Or Len(sourceSheetName) = 0 Or Len(targetSheetName) = 0 Then
-        MsgBox "Transform configuration incomplete. Check Transform Config sheet rows 2 (Name, Source Sheet, Target Sheet).", vbCritical, "Error"
+    If Len(transformName) = 0 Then transformName = "Transform"
+    
+    If Len(sourceSheetName) = 0 Or Len(targetSheetName) = 0 Then
+        MsgBox "Transform configuration incomplete. Source Sheet and Target Sheet are required in TransformSettingsTable.", vbCritical, "Error"
         Exit Sub
     End If
+    
+    ' Apply workflow prefix to sheet names (for reconciliation result sheets)
+    sourceSheetName = ApplyPrefix(resultPrefix, sourceSheetName)
+    targetSheetName = ApplyPrefix(resultPrefix, targetSheetName)
     
     ' Verify source sheet exists
     Dim wsSource As Worksheet
@@ -1087,27 +1104,62 @@ Public Sub RunTransform(Optional workflowName As String = "")
     Set wsTarget = GetOrCreateWorksheet(targetSheetName)
     wsTarget.Cells.Clear ' Clear existing content
     
-    ' Read column definitions (starting from row 5: Order, Target Column, Type, Source)
+    ' Read column definitions from TransformColumnsTable (second table)
     Dim columnDefs As Collection
     Set columnDefs = New Collection
     
+    ' Get second table in Transform Config sheet
+    Dim tblColumns As ListObject
+    On Error Resume Next
+    If wsTransformConfig.ListObjects.Count >= 2 Then
+        Set tblColumns = wsTransformConfig.ListObjects(2)
+    End If
+    On Error GoTo ErrorHandler
+    
+    If tblColumns Is Nothing Then
+        MsgBox "TransformColumnsTable (second table) not found in Transform Config sheet.", vbCritical, "Error"
+        Exit Sub
+    End If
+    
+    ' Find column indexes in TransformColumnsTable
+    Dim orderColIdx As Long, targetColIdx As Long, typeColIdx As Long, sourceColIdx As Long
+    Dim col As Long
+    
+    For col = 1 To tblColumns.ListColumns.Count
+        Select Case UCase(Trim(tblColumns.HeaderRowRange.Cells(1, col).value))
+            Case "ORDER"
+                orderColIdx = col
+            Case "TARGET COLUMN"
+                targetColIdx = col
+            Case "TYPE"
+                typeColIdx = col
+            Case "SOURCE"
+                sourceColIdx = col
+        End Select
+    Next col
+    
+    If orderColIdx = 0 Or targetColIdx = 0 Or typeColIdx = 0 Or sourceColIdx = 0 Then
+        MsgBox "TransformColumnsTable must have columns: Order, Target Column, Type, Source", vbCritical, "Error"
+        Exit Sub
+    End If
+    
+    ' Read column definitions from table
     Dim row As Long
-    row = 5
-    Do While Len(Trim(CStr(wsTransformConfig.Cells(row, 1).value))) > 0
+    For row = 1 To tblColumns.ListRows.Count
         Dim colDef As Object
         Set colDef = CreateObject("Scripting.Dictionary")
         
-        colDef("Order") = CLng(wsTransformConfig.Cells(row, 1).value)
-        colDef("TargetColumn") = Trim(CStr(wsTransformConfig.Cells(row, 2).value))
-        colDef("Type") = Trim(UCase(CStr(wsTransformConfig.Cells(row, 3).value)))
+        colDef("Order") = CLng(tblColumns.DataBodyRange.Cells(row, orderColIdx).value)
+        colDef("TargetColumn") = Trim(CStr(tblColumns.DataBodyRange.Cells(row, targetColIdx).value))
+        colDef("Type") = Trim(UCase(CStr(tblColumns.DataBodyRange.Cells(row, typeColIdx).value)))
         
         ' Read source as text/value
         Dim sourceValue As String
-        sourceValue = Trim(CStr(wsTransformConfig.Cells(row, 4).value))
+        sourceValue = Trim(CStr(tblColumns.DataBodyRange.Cells(row, sourceColIdx).value))
         
         ' For FORMULA type, ensure it starts with =
         If colDef("Type") = "FORMULA" Then
-            If left(sourceValue, 1) <> "=" Then
+            If Left(sourceValue, 1) <> "=" Then
                 sourceValue = "=" & sourceValue
             End If
         End If
@@ -1115,16 +1167,15 @@ Public Sub RunTransform(Optional workflowName As String = "")
         colDef("Source") = sourceValue
         
         columnDefs.Add colDef
-        row = row + 1
-    Loop
+    Next row
     
     If columnDefs.Count = 0 Then
-        MsgBox "No column definitions found. Add column definitions starting at row 5.", vbCritical, "Error"
+        MsgBox "No column definitions found in TransformColumnsTable.", vbCritical, "Error"
         Exit Sub
     End If
     
-    ' Apply transformation
-    ApplyTransformation wsSource, wsTarget, columnDefs
+    ' Apply transformation with filtering and sorting
+    ApplyTransformation wsSource, wsTarget, columnDefs, filterExpr, sortOrder
     
     ' Determine row count
     Dim rowCount As Long
@@ -1150,7 +1201,7 @@ ErrorHandler:
     MsgBox "Error during transformation: " & Err.Description, vbCritical, "Error"
 End Sub
 
-Private Sub ApplyTransformation(wsSource As Worksheet, wsTarget As Worksheet, columnDefs As Collection)
+Private Sub ApplyTransformation(wsSource As Worksheet, wsTarget As Worksheet, columnDefs As Collection, Optional filterExpr As String = "", Optional sortOrder As String = "")
     ' Write headers
     Dim colDef As Object
     Dim col As Long
@@ -1169,12 +1220,22 @@ Private Sub ApplyTransformation(wsSource As Worksheet, wsTarget As Worksheet, co
         Exit Sub
     End If
     
-    ' Populate all rows with EXISTING and STATIC columns only
+    ' Populate rows with EXISTING and STATIC columns only (applying filter)
     Dim sourceRow As Long, targetRow As Long
     Dim sourceColIndex As Long
+    targetRow = 1 ' Start at 1, will increment to 2 for first data row
     
     For sourceRow = 2 To lastSourceRow
-        targetRow = sourceRow
+        ' Apply filter if specified
+        If Len(filterExpr) > 0 Then
+            If Not EvaluateRowFilter(wsSource, sourceRow, filterExpr) Then
+                ' Skip this row - doesn't match filter
+                GoTo NextSourceRow
+            End If
+        End If
+        
+        ' Row passes filter - copy it
+        targetRow = targetRow + 1
         
         For Each colDef In columnDefs
             col = colDef("Order")
@@ -1201,13 +1262,21 @@ Private Sub ApplyTransformation(wsSource As Worksheet, wsTarget As Worksheet, co
                     
             End Select
         Next colDef
+        
+NextSourceRow:
     Next sourceRow
+    
+    ' Check if any rows were copied
+    If targetRow < 2 Then
+        MsgBox "No rows match the filter criteria.", vbExclamation, "Warning"
+        Exit Sub
+    End If
     
     ' Create table with the data we have
     Dim lastCol As Long
     lastCol = columnDefs.Count
     Dim lastRow As Long
-    lastRow = lastSourceRow
+    lastRow = targetRow ' Use actual target row count after filtering
     
     Dim tableRange As Range
     Set tableRange = wsTarget.Range(wsTarget.Cells(1, 1), wsTarget.Cells(lastRow, lastCol))
@@ -1231,8 +1300,70 @@ Private Sub ApplyTransformation(wsSource As Worksheet, wsTarget As Worksheet, co
         End If
     Next colDef
     
+    ' Apply sorting if specified
+    If Len(sortOrder) > 0 Then
+        ApplySorting wsTarget, sortOrder
+    End If
+    
     ' Auto-fit columns
     wsTarget.Columns("A:" & ColLetter(lastCol)).AutoFit
+End Sub
+
+Private Sub ApplySorting(ws As Worksheet, sortOrder As String)
+    ' Apply sorting to worksheet table based on sort order specification
+    ' sortOrder format: "Column1 ASC, Column2 DESC, Column3" (default is ASC)
+    
+    If Len(Trim(sortOrder)) = 0 Then Exit Sub
+    
+    ' Get the table on this worksheet
+    If ws.ListObjects.Count = 0 Then Exit Sub
+    Dim tbl As ListObject
+    Set tbl = ws.ListObjects(1)
+    
+    ' Parse sort specifications
+    Dim sortSpecs() As String
+    sortSpecs = Split(sortOrder, ",")
+    
+    ' Clear existing sort
+    tbl.Sort.SortFields.Clear
+    
+    ' Add each sort field
+    Dim i As Long, spec As String, colName As String, direction As Long
+    Dim colIndex As Long
+    
+    For i = 0 To UBound(sortSpecs)
+        spec = Trim(sortSpecs(i))
+        
+        ' Parse column name and direction
+        If UCase(Right(spec, 5)) = " DESC" Then
+            colName = Trim(Left(spec, Len(spec) - 5))
+            direction = xlDescending
+        ElseIf UCase(Right(spec, 4)) = " ASC" Then
+            colName = Trim(Left(spec, Len(spec) - 4))
+            direction = xlAscending
+        Else
+            colName = spec
+            direction = xlAscending ' Default
+        End If
+        
+        ' Find column index in table
+        colIndex = FindColumnIndex(ws, colName)
+        If colIndex > 0 Then
+            tbl.Sort.SortFields.Add Key:=ws.Cells(1, colIndex), _
+                SortOn:=xlSortOnValues, _
+                Order:=direction, _
+                DataOption:=xlSortNormal
+        End If
+    Next i
+    
+    ' Apply the sort
+    With tbl.Sort
+        .Header = xlYes
+        .MatchCase = False
+        .Orientation = xlTopToBottom
+        .SortMethod = xlPinYin
+        .Apply
+    End With
 End Sub
 
 ' Helper: Get worksheet by name or create it if it doesn't exist
