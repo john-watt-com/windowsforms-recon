@@ -1086,7 +1086,7 @@ Public Sub RunTransform(Optional workflowName As String = "")
     End If
     
     ' Read transform settings and apply prefix to sheet names
-    Set transformSettings = ReadTransformSettings(wsTransformConfig, resultPrefix)
+    Set transformSettings = ReadTransformSettings(wsTransformConfig, resultPrefix, workflowName)
     
     ' Validate source sheet and create target sheet
     Set wsSource = ValidateSourceSheet(transformSettings("SourceSheet"))
@@ -1096,7 +1096,7 @@ Public Sub RunTransform(Optional workflowName As String = "")
     wsTarget.Cells.Clear
     
     ' Read column definitions
-    Set columnDefs = ReadTransformColumnDefinitions(wsTransformConfig)
+    Set columnDefs = ReadTransformColumnDefinitions(wsTransformConfig, workflowName)
     If columnDefs Is Nothing Then Exit Sub
     
     ' Execute transformation
@@ -1117,7 +1117,7 @@ ErrorHandler:
     MsgBox "Error during transformation: " & Err.Description, vbCritical, "Error"
 End Sub
 
-Private Function ReadTransformSettings(wsTransformConfig As Worksheet, resultPrefix As String) As Object
+Private Function ReadTransformSettings(wsTransformConfig As Worksheet, resultPrefix As String, Optional workflowName As String = "") As Object
     Dim settings As Object
     Dim transformName As String
     Dim sourceSheetName As String
@@ -1125,15 +1125,15 @@ Private Function ReadTransformSettings(wsTransformConfig As Worksheet, resultPre
     
     Set settings = CreateObject("Scripting.Dictionary")
     
-    ' Read from TransformSettingsTable
-    transformName = GetConfigValue(wsTransformConfig, "Name")
-    sourceSheetName = GetConfigValue(wsTransformConfig, "Source Sheet")
-    targetSheetName = GetConfigValue(wsTransformConfig, "Target Sheet")
+    ' Read from TransformSettingsTable (with optional workflow filtering)
+    transformName = GetConfigValue(wsTransformConfig, "Name", workflowName)
+    sourceSheetName = GetConfigValue(wsTransformConfig, "Source Sheet", workflowName)
+    targetSheetName = GetConfigValue(wsTransformConfig, "Target Sheet", workflowName)
     
     If Len(transformName) = 0 Then transformName = "Transform"
     
     If Len(sourceSheetName) = 0 Or Len(targetSheetName) = 0 Then
-        MsgBox "Transform configuration incomplete. Source Sheet and Target Sheet are required in TransformSettingsTable.", vbCritical, "Error"
+        MsgBox "Transform configuration incomplete. Source Sheet and Target Sheet are required in TransformSettingsTable." & IIf(Len(workflowName) > 0, " (Workflow: " & workflowName & ")", ""), vbCritical, "Error"
         Set ReadTransformSettings = Nothing
         Exit Function
     End If
@@ -1142,8 +1142,8 @@ Private Function ReadTransformSettings(wsTransformConfig As Worksheet, resultPre
     settings("Name") = transformName
     settings("SourceSheet") = ApplyPrefix(resultPrefix, sourceSheetName)
     settings("TargetSheet") = ApplyPrefix(resultPrefix, targetSheetName)
-    settings("Filter") = GetConfigValue(wsTransformConfig, "Filter")
-    settings("SortOrder") = GetConfigValue(wsTransformConfig, "Sort Order")
+    settings("Filter") = GetConfigValue(wsTransformConfig, "Filter", workflowName)
+    settings("SortOrder") = GetConfigValue(wsTransformConfig, "Sort Order", workflowName)
     
     Set ReadTransformSettings = settings
 End Function
@@ -1162,19 +1162,22 @@ Private Function ValidateSourceSheet(sourceSheetName As String) As Worksheet
     Set ValidateSourceSheet = wsSource
 End Function
 
-Private Function ReadTransformColumnDefinitions(wsTransformConfig As Worksheet) As Collection
+Private Function ReadTransformColumnDefinitions(wsTransformConfig As Worksheet, Optional workflowName As String = "") As Collection
     Dim columnDefs As Collection
     Dim tblColumns As ListObject
     Dim orderColIdx As Long
     Dim targetColIdx As Long
     Dim typeColIdx As Long
     Dim sourceColIdx As Long
+    Dim workflowColIdx As Long
     Dim col As Long
     Dim row As Long
     Dim colDef As Object
     Dim sourceValue As String
+    Dim workflowNameUpper As String
     
     Set columnDefs = New Collection
+    workflowNameUpper = UCase(Trim(workflowName))
     
     ' Get second table (TransformColumnsTable)
     On Error Resume Next
@@ -1200,6 +1203,8 @@ Private Function ReadTransformColumnDefinitions(wsTransformConfig As Worksheet) 
                 typeColIdx = col
             Case "SOURCE"
                 sourceColIdx = col
+            Case "WORKFLOW"
+                workflowColIdx = col
         End Select
     Next col
     
@@ -1211,6 +1216,15 @@ Private Function ReadTransformColumnDefinitions(wsTransformConfig As Worksheet) 
     
     ' Read column definitions
     For row = 1 To tblColumns.ListRows.Count
+        ' Filter by workflow if specified and Workflow column exists
+        If Len(workflowName) > 0 And workflowColIdx > 0 Then
+            Dim rowWorkflow As String
+            rowWorkflow = UCase(Trim(CStr(tblColumns.DataBodyRange.Cells(row, workflowColIdx).value)))
+            If rowWorkflow <> workflowNameUpper Then
+                GoTo NextColumnRow  ' Skip rows that don't match workflow
+            End If
+        End If
+        
         Set colDef = CreateObject("Scripting.Dictionary")
         
         ' Validate Order value
@@ -1249,10 +1263,12 @@ Private Function ReadTransformColumnDefinitions(wsTransformConfig As Worksheet) 
         
         colDef("Source") = sourceValue
         columnDefs.Add colDef
+        
+NextColumnRow:
     Next row
     
     If columnDefs.Count = 0 Then
-        MsgBox "No column definitions found in TransformColumnsTable.", vbCritical, "Error"
+        MsgBox "No column definitions found in TransformColumnsTable." & IIf(Len(workflowName) > 0, " (Workflow: " & workflowName & ")", ""), vbCritical, "Error"
         Set ReadTransformColumnDefinitions = Nothing
         Exit Function
     End If
