@@ -1209,7 +1209,28 @@ Private Function ReadTransformColumnDefinitions(wsTransformConfig As Worksheet) 
     For row = 1 To tblColumns.ListRows.Count
         Set colDef = CreateObject("Scripting.Dictionary")
         
-        colDef("Order") = CLng(tblColumns.DataBodyRange.Cells(row, orderColIdx).value)
+        ' Validate Order value
+        Dim orderValue As Variant
+        orderValue = tblColumns.DataBodyRange.Cells(row, orderColIdx).value
+        
+        If IsEmpty(orderValue) Or Not IsNumeric(orderValue) Then
+            MsgBox "Row " & row & " in TransformColumnsTable has an invalid Order value. Order must be a number between 1 and 16384." & vbCrLf & vbCrLf & _
+                   "Current value: " & IIf(IsEmpty(orderValue), "(empty)", CStr(orderValue)), vbCritical, "Config Error"
+            Set ReadTransformColumnDefinitions = Nothing
+            Exit Function
+        End If
+        
+        Dim orderNum As Long
+        orderNum = CLng(orderValue)
+        
+        If orderNum < 1 Or orderNum > 16384 Then
+            MsgBox "Row " & row & " in TransformColumnsTable has Order = " & orderNum & "." & vbCrLf & _
+                   "Order must be between 1 and 16384.", vbCritical, "Config Error"
+            Set ReadTransformColumnDefinitions = Nothing
+            Exit Function
+        End If
+        
+        colDef("Order") = orderNum
         colDef("TargetColumn") = Trim(CStr(tblColumns.DataBodyRange.Cells(row, targetColIdx).value))
         colDef("Type") = Trim(UCase(CStr(tblColumns.DataBodyRange.Cells(row, typeColIdx).value)))
         
