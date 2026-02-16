@@ -1951,9 +1951,10 @@ ErrorHandler:
     Debug.Print "Logging error: " & Err.Description
 End Sub
 
-' Filter evaluation function - supports multiple conditions
+' Filter evaluation function - supports multiple conditions and functions
 Private Function EvaluateRowFilter(ws As Worksheet, row As Long, filterExpr As String) As Boolean
     ' Supports multiple comma-separated conditions, e.g. Amount<>0,Category="Loan"
+    ' Supports functions: ABS(columnName)>0.02
     ' Handles =, <>, >, <, >=, <= for numeric and text columns
     Dim conds() As String
     Dim i As Long
@@ -1963,6 +1964,8 @@ Private Function EvaluateRowFilter(ws As Worksheet, row As Long, filterExpr As S
     Dim cellVal As Variant
     Dim result As Boolean
     Dim cmpVal As Variant
+    Dim funcName As String
+    Dim leftSide As String
     
     If Len(Trim(filterExpr)) = 0 Then
         EvaluateRowFilter = True
@@ -1972,6 +1975,7 @@ Private Function EvaluateRowFilter(ws As Worksheet, row As Long, filterExpr As S
     conds = Split(filterExpr, ",")
     For i = 0 To UBound(conds)
         cond = Trim(conds(i))
+        
         ' Find operator (=, <>, >=, <=, >, <)
         If InStr(cond, ">=") > 0 Then
             op = ">="
@@ -1989,18 +1993,37 @@ Private Function EvaluateRowFilter(ws As Worksheet, row As Long, filterExpr As S
             EvaluateRowFilter = False
             Exit Function
         End If
-        colName = Trim(Left(cond, InStr(cond, op) - 1))
+        
+        leftSide = Trim(Left(cond, InStr(cond, op) - 1))
         val = Trim(Mid(cond, InStr(cond, op) + Len(op)))
+        
         ' Remove quotes for string comparisons
         If Left(val, 1) = Chr(34) And Right(val, 1) = Chr(34) Then
             val = Mid(val, 2, Len(val) - 2)
         End If
+        
+        ' Check for function syntax: FUNC(ColumnName)
+        If InStr(leftSide, "(") > 0 And InStr(leftSide, ")") > 0 Then
+            funcName = UCase(Trim(Left(leftSide, InStr(leftSide, "(") - 1)))
+            colName = Trim(Mid(leftSide, InStr(leftSide, "(") + 1, InStr(leftSide, ")") - InStr(leftSide, "(") - 1))
+        Else
+            funcName = ""
+            colName = leftSide
+        End If
+        
+        ' Get column value
         colIdx = FindColumnIndex(ws, colName)
         If colIdx = 0 Then
             EvaluateRowFilter = False
             Exit Function
         End If
         cellVal = ws.Cells(row, colIdx).Value
+        
+        ' Apply function if specified
+        If Len(funcName) > 0 Then
+            cellVal = ApplyFilterFunction(funcName, cellVal)
+        End If
+        
         ' Try numeric comparison if possible
         If IsNumeric(cellVal) And IsNumeric(val) Then
             cmpVal = CDbl(val)
@@ -2025,12 +2048,28 @@ Private Function EvaluateRowFilter(ws As Worksheet, row As Long, filterExpr As S
                 Case Else: result = False
             End Select
         End If
+        
         If Not result Then
             EvaluateRowFilter = False
             Exit Function
         End If
     Next i
     EvaluateRowFilter = True
+End Function
+
+Private Function ApplyFilterFunction(funcName As String, value As Variant) As Variant
+    ' Apply supported functions to filter values
+    Select Case UCase(Trim(funcName))
+        Case "ABS"
+            If IsNumeric(value) Then
+                ApplyFilterFunction = Abs(CDbl(value))
+            Else
+                ApplyFilterFunction = value
+            End If
+        Case Else
+            ' Unknown function - return value unchanged
+            ApplyFilterFunction = value
+    End Select
 End Function
 
 
