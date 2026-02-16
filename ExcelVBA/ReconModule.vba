@@ -1106,6 +1106,10 @@ Public Sub RunTransform(Optional workflowName As String = "")
     rowCount = wsTarget.Cells(wsTarget.Rows.Count, 1).End(xlUp).row - 1
     LogTransformSuccess workflowName, transformSettings, rowCount, Timer - startTime
     
+    ' Show results and return focus to form
+    wsTarget.Activate
+    ReconForm.Show vbModeless
+    
     Exit Sub
     
 ErrorHandler:
