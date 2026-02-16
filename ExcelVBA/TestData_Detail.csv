@@ -23,3 +23,11 @@ AccountID,AccountName,Type,Amount,LineItem,Status
 1012,Enterprise Co,Interest,30.00,Accrued Q2,Active
 1013,Digital Agency,Fee,120.00,Setup Fee,Active
 1013,Digital Agency,Fee,75.00,Training Fee,Active
+1014,Small Adjustments Inc,Fee,0.01,Rounding Adjustment,Active
+1014,Small Adjustments Inc,Fee,0.02,Minor Correction,Active
+1015,Tiny Amounts LLC,Fee,-0.01,Credit Adjustment,Active
+1015,Tiny Amounts LLC,Fee,-0.02,Refund,Active
+1016,Rounding Co,Fee,0.03,Penny Difference,Active
+1016,Rounding Co,Fee,-0.01,Small Variance,Active
+1017,Negligible Ltd,Fee,0.01,Trivial Amount,Active
+1017,Negligible Ltd,Fee,-0.03,Near Threshold,Active
