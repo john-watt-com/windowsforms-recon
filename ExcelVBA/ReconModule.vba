@@ -1056,6 +1056,9 @@ Public Sub SaveSheetToFile()
     Dim filePath As Variant
     Dim fileName As String
     Dim sheetName As String
+    Dim timeStamp As String
+    Dim defaultPath As String
+    Dim response As VbMsgBoxResult
     
     ' Get the sheet where the button is located
     On Error Resume Next
@@ -1069,9 +1072,18 @@ Public Sub SaveSheetToFile()
     
     sheetName = ws.Name
     
+    ' Create timestamp in format yyyy-mm-dd_hhmm
+    timeStamp = Format(Now, "yyyy-mm-dd_hhmm")
+    
+    ' Get the folder where the current workbook resides
+    defaultPath = ThisWorkbook.Path
+    If defaultPath <> "" Then
+        defaultPath = defaultPath & "\"
+    End If
+    
     ' Use GetSaveAsFilename for proper filter support
     filePath = Application.GetSaveAsFilename( _
-        InitialFileName:=sheetName & ".xls", _
+        InitialFileName:=defaultPath & sheetName & "_" & timeStamp & ".xls", _
         FileFilter:="Excel 97-2003 Workbook (*.xls), *.xls", _
         Title:="Save " & sheetName & " as Excel 97-2003 Workbook")
     
@@ -1100,7 +1112,12 @@ Public Sub SaveSheetToFile()
         ' Log the save
         LogActivity "Export", "", "Sheet: " & sheetName & " | File: " & fileName, "Success", 0
         
-        MsgBox "Sheet '" & sheetName & "' saved successfully to:" & vbCrLf & filePath, vbInformation, "Success"
+        ' Ask if user wants to open the file
+        response = MsgBox("Sheet '" & sheetName & "' saved successfully to:" & vbCrLf & filePath & vbCrLf & vbCrLf & "Do you want to open the file?", vbYesNo + vbQuestion, "Success")
+        
+        If response = vbYes Then
+            Workbooks.Open filePath
+        End If
     End If
     
     Exit Sub
