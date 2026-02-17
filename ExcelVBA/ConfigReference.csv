@@ -1,0 +1,34 @@
+Table/Section,Setting Name,Required/Optional,Data Type,Valid Values,Description,Notes
+TransformSettingsTable,SourceSheetName,Required,Text,Any valid sheet name,Name of the source sheet to transform data from,Located in Transform Config sheet
+TransformSettingsTable,TargetSheetName,Required,Text,Any valid sheet name,Name of the target sheet where transformed data will be placed,Located in Transform Config sheet
+TransformSettingsTable,Workflow,Optional,Text,Any text identifier,Workflow identifier for filtering transform settings,Leave blank for default workflow
+TransformColumnsTable,TargetColumnName,Required,Text,Any column name,Name of the column in the target sheet,Located in Transform Config sheet
+TransformColumnsTable,SourceColumnName,Required,Text,Source column name or formula,Name of the column in the source sheet or a calculated formula,Located in Transform Config sheet
+TransformColumnsTable,Order,Required,Number,1 to 16384,Column order in the target sheet,Must be unique and sequential; cannot be empty
+TransformColumnsTable,Filter,Optional,Text,Filter expression,Row-level filter using operators and functions,Examples: Status=Active or ABS(Amount)>0.01
+TransformColumnsTable,Workflow,Optional,Text,Any text identifier,Workflow identifier matching TransformSettingsTable,Leave blank for default workflow
+ReconSettingsTable,Sheet1Name,Required,Text,Any valid sheet name,Name of the first sheet to reconcile,Located in Recon Config sheet
+ReconSettingsTable,Sheet2Name,Required,Text,Any valid sheet name,Name of the second sheet to reconcile,Located in Recon Config sheet
+ReconSettingsTable,JoinType,Required,Text,Inner or Full,Type of join to perform,Inner = matches only; Full = all rows with differences
+ReconColumnsTable,TargetColumnName,Required,Text,Any column name,Name of the column in the reconciliation result,Located in Recon Config sheet
+ReconColumnsTable,Sheet1ColumnName,Optional*,Text,Source column name,Column name from Sheet1,*Required if column participates in comparison
+ReconColumnsTable,Sheet2ColumnName,Optional*,Text,Source column name,Column name from Sheet2,*Required if column participates in comparison
+ReconColumnsTable,IsKey,Required,Boolean,TRUE or FALSE,Whether this column is part of the join key,At least one column must be TRUE
+ReconColumnsTable,Order,Required,Number,1 to 16384,Column order in the result sheet,Must be unique and sequential; cannot be empty
+,,,,,,
+FILTER OPERATORS,,,,,Description,
+,=,,,Equal to,Exact match comparison,
+,<>,,,Not equal to,Excludes matching values,
+,>,,,Greater than,Numeric comparison,
+,<,,,Less than,Numeric comparison,
+,>=,,,Greater than or equal to,Numeric comparison,
+,<=,,,Less than or equal to,Numeric comparison,
+,,,,,,
+FILTER FUNCTIONS,,,,,Description,Example
+,ABS(ColumnName),,,Absolute value of the column,Returns positive value,ABS(Amount)>0.01
+,,,,,,
+FILTER EXAMPLES,,,,,Description,
+,Status=Active,,,,,Only rows where Status equals Active
+,Amount>100,,,,,Only rows where Amount is greater than 100
+,ABS(Amount)>0.01,,,,,Only rows where absolute value of Amount is greater than 0.01
+,Type<>Exclude,,,,,Only rows where Type is not Exclude
