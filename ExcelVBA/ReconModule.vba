@@ -1048,6 +1048,68 @@ Public Sub ShowReconForm()
     ReconForm.Show
 End Sub
 
+' Helper: Save current sheet to new workbook
+' Assign this to a button on any sheet - it will save that specific sheet
+Public Sub SaveSheetToFile()
+    Dim ws As Worksheet
+    Dim wb As Workbook
+    Dim filePath As Variant
+    Dim fileName As String
+    Dim sheetName As String
+    
+    ' Get the sheet where the button is located
+    On Error Resume Next
+    Set ws = Application.Caller.Parent.Parent
+    On Error GoTo 0
+    
+    ' Fallback to active sheet if we can't determine button location
+    If ws Is Nothing Then
+        Set ws = ActiveSheet
+    End If
+    
+    sheetName = ws.Name
+    
+    ' Use GetSaveAsFilename for proper filter support
+    filePath = Application.GetSaveAsFilename( _
+        InitialFileName:=sheetName & ".xls", _
+        FileFilter:="Excel 97-2003 Workbook (*.xls), *.xls", _
+        Title:="Save " & sheetName & " as Excel 97-2003 Workbook")
+    
+    ' Check if user cancelled
+    If filePath <> False Then
+        ' Ensure .xls extension
+        If LCase(Right(filePath, 4)) <> ".xls" Then
+            filePath = filePath & ".xls"
+        End If
+        
+        On Error GoTo SaveError
+        
+        ' Copy sheet to new workbook
+        ws.Copy
+        Set wb = ActiveWorkbook
+        
+        ' Save as Excel 97-2003 format
+        wb.SaveAs fileName:=filePath, FileFormat:=xlExcel8
+        
+        ' Close the new workbook
+        wb.Close SaveChanges:=False
+        
+        ' Extract filename from path
+        fileName = Mid(filePath, InStrRev(filePath, "\") + 1)
+        
+        ' Log the save
+        LogActivity "Export", "", "Sheet: " & sheetName & " | File: " & fileName, "Success", 0
+        
+        MsgBox "Sheet '" & sheetName & "' saved successfully to:" & vbCrLf & filePath, vbInformation, "Success"
+    End If
+    
+    Exit Sub
+    
+SaveError:
+    LogActivity "Export", "", "Error saving sheet: " & sheetName & " - " & Err.Description, "Error", 0
+    MsgBox "Error saving sheet: " & Err.Description, vbCritical, "Error"
+End Sub
+
 ' ========================================
 ' TRANSFORMATION MODULE
 ' ========================================
