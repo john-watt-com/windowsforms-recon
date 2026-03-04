@@ -2047,7 +2047,7 @@ Private Sub LogActivity(operationType As String, workflowName As String, _
         Set tableRange = wsLog.Range("A1:G1")
         Set tblLog = wsLog.ListObjects.Add(xlSrcRange, tableRange, , xlYes)
         tblLog.Name = "ActivityLogTable"
-        tblLog.TableStyle = "TableStyleMedium2"
+        tblLog.TableStyle = "TableStyleLight1"
     End If
     
     ' Add new row to table
