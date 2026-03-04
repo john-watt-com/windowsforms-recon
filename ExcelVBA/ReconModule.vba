@@ -673,63 +673,50 @@ End Function
 Private Function BuildResultsRowData(allIDs As Collection, dict1 As Object, dict2 As Object, _
                                      dictAdditional As Object, additionalColNames() As String, _
                                      hasAdditionalCols As Boolean, tolerance As Double) As Collection
-    ' Build row data collection
     Dim rowData As Collection
-    Set rowData = New Collection
-    
-    Dim i As Long, j As Long
+    Dim i As Long
+    Dim j As Long
     Dim id As String
-    Dim total1 As Double, total2 As Double, diff As Double
+    Dim total1 As Double
+    Dim total2 As Double
+    Dim diff As Double
     Dim isMatch As Boolean
     Dim additionalDict As Object
     Dim rowDict As Object
-    
+
+    Set rowData = New Collection
+
     For i = 1 To allIDs.Count
         id = allIDs(i)
-        
-        ' Get totals (default to 0 if not exists)
-        If dict1.Exists(id) Then
-            total1 = dict1(id)
-        Else
-            total1 = 0
-        End If
-        
-        If dict2.Exists(id) Then
-            total2 = dict2(id)
-        Else
-            total2 = 0
-        End If
-        
+
+        If dict1.Exists(id) Then total1 = dict1(id) Else total1 = 0
+        If dict2.Exists(id) Then total2 = dict2(id) Else total2 = 0
+
         diff = total1 - total2
         isMatch = (Abs(diff) < tolerance)
-        
-        ' Create row dictionary
+
         Set rowDict = CreateObject("Scripting.Dictionary")
         rowDict("IsMatch") = isMatch
         rowDict("Difference") = diff
         rowDict("ID") = id
         rowDict("Sheet1 Total") = total1
         rowDict("Sheet2 Total") = total2
-        
-        ' Add additional columns
-        If hasAdditionalCols And dictAdditional.Exists(id) Then
-            Set additionalDict = dictAdditional(id)
+
+        If hasAdditionalCols Then
+            Set additionalDict = Nothing
+            If dictAdditional.Exists(id) Then Set additionalDict = dictAdditional(id)
             For j = 0 To UBound(additionalColNames)
-                If additionalDict.Exists(additionalColNames(j)) Then
+                If Not additionalDict Is Nothing And additionalDict.Exists(additionalColNames(j)) Then
                     rowDict(additionalColNames(j)) = additionalDict(additionalColNames(j))
                 Else
                     rowDict(additionalColNames(j)) = ""
                 End If
             Next j
-        ElseIf hasAdditionalCols Then
-            For j = 0 To UBound(additionalColNames)
-                rowDict(additionalColNames(j)) = ""
-            Next j
         End If
-        
+
         rowData.Add rowDict
     Next i
-    
+
     Set BuildResultsRowData = rowData
 End Function
 
