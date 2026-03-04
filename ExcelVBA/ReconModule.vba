@@ -129,11 +129,11 @@ Public Sub RunReconciliation(Optional workflowName As String = "")
     
     ' Build dictionaries and process data
     Set reconData = BuildReconciliationData(ws1, ws2, reconSettings)
-    Set allIDs = GetUniqueIDs(reconData("Dict1"), reconData("Dict2"))
+    Set allIDs = GetUniqueIDs(reconData("Sheet1Totals"), reconData("Sheet2Totals"))
     
     ' Write and split results
-    WriteResults wsResults, allIDs, reconData("Dict1"), reconData("Dict2"), reconData("DictAdditional1"), reconSettings("AdditionalColumns1"), reconSettings("Tolerance"), reconSettings("SortOrder")
-    SplitResults wsResults, ws1, ws2, reconSettings("IdCol1"), reconSettings("IdCol2"), reconSettings("DetailSheet"), reconData("DictDetailRows"), reconData("Dict1"), reconData("Dict2"), reconData("DictAdditional1"), reconData("DictAdditional2"), reconSettings("AdditionalColumns1"), reconSettings("AdditionalColumns2"), resultPrefix, matchCount, errorCount
+    WriteResults wsResults, allIDs, reconData("Sheet1Totals"), reconData("Sheet2Totals"), reconData("Sheet1Additional"), reconSettings("AdditionalColumns1"), reconSettings("Tolerance"), reconSettings("SortOrder")
+    SplitResults wsResults, ws1, ws2, reconSettings("IdCol1"), reconSettings("IdCol2"), reconSettings("DetailSheet"), reconData("DetailRows"), reconData("Sheet1Totals"), reconData("Sheet2Totals"), reconData("Sheet1Additional"), reconData("Sheet2Additional"), reconSettings("AdditionalColumns1"), reconSettings("AdditionalColumns2"), resultPrefix, matchCount, errorCount
     
     ' Log and report success
     LogReconciliationSuccess workflowName, reconConfigSheetName, matchCount, errorCount, reconSettings("Tolerance"), reconSettings("DetailSheet"), allIDs.Count
@@ -166,8 +166,12 @@ Private Function ReadReconciliationConfig(wsConfig As Worksheet, workflowName As
     
     ' Read tolerance with default
     toleranceStr = GetConfigValue(wsConfig, "Tolerance", workflowName)
-    If IsNumeric(toleranceStr) And CDbl(toleranceStr) >= 0 Then
-        settings("Tolerance") = CDbl(toleranceStr)
+    If IsNumeric(toleranceStr) Then
+        If CDbl(toleranceStr) >= 0 Then
+            settings("Tolerance") = CDbl(toleranceStr)
+        Else
+            settings("Tolerance") = 0.01
+        End If
     Else
         settings("Tolerance") = 0.01
     End If
@@ -184,19 +188,19 @@ Private Function BuildReconciliationData(ws1 As Worksheet, ws2 As Worksheet, set
     Set data = CreateObject("Scripting.Dictionary")
     
     ' Build totals dictionaries with filtering
-    Set data("Dict1") = BuildTotalsDictionary(ws1, settings("IdCol1"), settings("ValueColumns1"), settings("Sheet1Filter"))
-    Set data("Dict2") = BuildTotalsDictionary(ws2, settings("IdCol2"), settings("ValueColumns2"), settings("Sheet2Filter"))
+    Set data("Sheet1Totals") = BuildTotalsDictionary(ws1, settings("IdCol1"), settings("ValueColumns1"), settings("Sheet1Filter"))
+    Set data("Sheet2Totals") = BuildTotalsDictionary(ws2, settings("IdCol2"), settings("ValueColumns2"), settings("Sheet2Filter"))
     
     ' Build additional columns dictionaries
-    Set data("DictAdditional1") = BuildAdditionalColumnsDictionary(ws1, settings("IdCol1"), settings("AdditionalColumns1"))
-    Set data("DictAdditional2") = BuildAdditionalColumnsDictionary(ws2, settings("IdCol2"), settings("AdditionalColumns2"))
+    Set data("Sheet1Additional") = BuildAdditionalColumnsDictionary(ws1, settings("IdCol1"), settings("AdditionalColumns1"))
+    Set data("Sheet2Additional") = BuildAdditionalColumnsDictionary(ws2, settings("IdCol2"), settings("AdditionalColumns2"))
     
     ' Build detail rows dictionary if needed
-    Set data("DictDetailRows") = CreateObject("Scripting.Dictionary")
+    Set data("DetailRows") = CreateObject("Scripting.Dictionary")
     If settings("DetailSheet") = "SHEET1" Then
-        Set data("DictDetailRows") = BuildAllDetailRowsDictionary(ws1, settings("IdCol1"), settings("AdditionalColumns1"), settings("Sheet1Filter"))
+        Set data("DetailRows") = BuildAllDetailRowsDictionary(ws1, settings("IdCol1"), settings("AdditionalColumns1"), settings("Sheet1Filter"))
     ElseIf settings("DetailSheet") = "SHEET2" Then
-        Set data("DictDetailRows") = BuildAllDetailRowsDictionary(ws2, settings("IdCol2"), settings("AdditionalColumns2"), settings("Sheet2Filter"))
+        Set data("DetailRows") = BuildAllDetailRowsDictionary(ws2, settings("IdCol2"), settings("AdditionalColumns2"), settings("Sheet2Filter"))
     End If
     
     Set BuildReconciliationData = data
@@ -485,7 +489,9 @@ Private Function BuildAllDetailRowsDictionary(ws As Worksheet, idColumnName As S
     lastRow = ws.Cells(ws.Rows.Count, idColIndex).End(xlUp).row
 
     For row = 2 To lastRow
-        If Len(filterExpr) > 0 And Not EvaluateRowFilter(ws, row, filterExpr) Then GoTo NextRowAll
+        If Len(filterExpr) > 0 Then
+            If Not EvaluateRowFilter(ws, row, filterExpr) Then GoTo NextRowAll
+        End If
 
         id = Trim(CStr(ws.Cells(row, idColIndex).value))
         If Len(id) = 0 Then GoTo NextRowAll
@@ -578,17 +584,16 @@ NextRow:
     Next row
 End Function
 
-Private Function GetUniqueIDs(dict1 As Object, dict2 As Object) As Collection
-    ' Combine all unique IDs from both dictionaries
+Private Function GetUniqueIDs(sheet1Totals As Object, sheet2Totals As Object) As Collection
     Dim allIDs As New Collection
     Dim key As Variant
     
     On Error Resume Next ' Ignore duplicates
-    For Each key In dict1.Keys
+    For Each key In sheet1Totals.Keys
         allIDs.Add key, CStr(key)
     Next key
     
-    For Each key In dict2.Keys
+    For Each key In sheet2Totals.Keys
         allIDs.Add key, CStr(key)
     Next key
     On Error GoTo 0
@@ -596,7 +601,7 @@ Private Function GetUniqueIDs(dict1 As Object, dict2 As Object) As Collection
     Set GetUniqueIDs = allIDs
 End Function
 
-Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, dict1 As Object, dict2 As Object, dictAdditional As Object, additionalColumnsStr As String, tolerance As Double, sortOrder As String)
+Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, sheet1Totals As Object, sheet2Totals As Object, sheet1Additional As Object, additionalColumnsStr As String, tolerance As Double, sortOrder As String)
     ' Declare all variables at the top
     Dim additionalColNames() As String
     Dim hasAdditionalCols As Boolean
@@ -623,7 +628,7 @@ Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, dict1 As 
     lastHeaderCol = WriteResultsHeader(wsResults, additionalColNames, hasAdditionalCols)
 
     ' Build and sort row data
-    Set rowData = BuildResultsRowData(allIDs, dict1, dict2, dictAdditional, additionalColNames, hasAdditionalCols, tolerance)
+    Set rowData = BuildResultsRowData(allIDs, sheet1Totals, sheet2Totals, sheet1Additional, additionalColNames, hasAdditionalCols, tolerance)
     SortRowData rowData, sortOrder, wsResults
 
     ' Write data rows
@@ -670,8 +675,8 @@ Private Function WriteResultsHeader(wsResults As Worksheet, additionalColNames()
     WriteResultsHeader = lastHeaderCol
 End Function
 
-Private Function BuildResultsRowData(allIDs As Collection, dict1 As Object, dict2 As Object, _
-                                     dictAdditional As Object, additionalColNames() As String, _
+Private Function BuildResultsRowData(allIDs As Collection, sheet1Totals As Object, sheet2Totals As Object, _
+                                     sheet1Additional As Object, additionalColNames() As String, _
                                      hasAdditionalCols As Boolean, tolerance As Double) As Collection
     Dim rowData As Collection
     Dim i As Long
@@ -689,8 +694,8 @@ Private Function BuildResultsRowData(allIDs As Collection, dict1 As Object, dict
     For i = 1 To allIDs.Count
         id = allIDs(i)
 
-        If dict1.Exists(id) Then total1 = dict1(id) Else total1 = 0
-        If dict2.Exists(id) Then total2 = dict2(id) Else total2 = 0
+        If sheet1Totals.Exists(id) Then total1 = sheet1Totals(id) Else total1 = 0
+        If sheet2Totals.Exists(id) Then total2 = sheet2Totals(id) Else total2 = 0
 
         diff = total1 - total2
         isMatch = (Abs(diff) < tolerance)
@@ -704,10 +709,14 @@ Private Function BuildResultsRowData(allIDs As Collection, dict1 As Object, dict
 
         If hasAdditionalCols Then
             Set additionalDict = Nothing
-            If dictAdditional.Exists(id) Then Set additionalDict = dictAdditional(id)
+            If sheet1Additional.Exists(id) Then Set additionalDict = sheet1Additional(id)
             For j = 0 To UBound(additionalColNames)
-                If Not additionalDict Is Nothing And additionalDict.Exists(additionalColNames(j)) Then
-                    rowDict(additionalColNames(j)) = additionalDict(additionalColNames(j))
+                If Not additionalDict Is Nothing Then
+                    If additionalDict.Exists(additionalColNames(j)) Then
+                        rowDict(additionalColNames(j)) = additionalDict(additionalColNames(j))
+                    Else
+                        rowDict(additionalColNames(j)) = ""
+                    End If
                 Else
                     rowDict(additionalColNames(j)) = ""
                 End If
@@ -1560,8 +1569,8 @@ End Function
 ' Helper: Split results from All Results into Match Results and Error Results sheets
 Private Sub SplitResults(wsAllResults As Worksheet, ws1 As Worksheet, ws2 As Worksheet, _
                          idCol1 As String, idCol2 As String, detailSheet As String, _
-                         dictDetailRows As Object, dict1 As Object, dict2 As Object, _
-                         dictAdditional1 As Object, dictAdditional2 As Object, _
+                         detailRows As Object, sheet1Totals As Object, sheet2Totals As Object, _
+                         sheet1Additional As Object, sheet2Additional As Object, _
                          additionalColumns1 As String, additionalColumns2 As String, _
                          Optional resultPrefix As String = "", _
                          Optional ByRef matchCount As Long = 0, _
@@ -1599,7 +1608,7 @@ Private Sub SplitResults(wsAllResults As Worksheet, ws1 As Worksheet, ws2 As Wor
     If isDetailMode Then
         ' Detail expansion mode for Match Results
         WriteDetailMatchResults wsMatch, wsAllResults, ws1, ws2, idCol1, idCol2, detailSheet, _
-                                dictDetailRows, dict1, dict2, dictAdditional1, dictAdditional2, _
+                                detailRows, sheet1Totals, sheet2Totals, sheet1Additional, sheet2Additional, _
                                 additionalColumns1, additionalColumns2, idCol, sheet1TotalCol, sheet2TotalCol, matchCount
     Else
         ' Aggregated mode for Match Results (current behavior)
@@ -1681,8 +1690,8 @@ End Sub
 Private Sub WriteDetailMatchResults(wsMatch As Worksheet, wsAllResults As Worksheet, _
                                      ws1 As Worksheet, ws2 As Worksheet, _
                                      idCol1 As String, idCol2 As String, detailSheet As String, _
-                                     dictDetailRows As Object, dict1 As Object, dict2 As Object, _
-                                     dictAdditional1 As Object, dictAdditional2 As Object, _
+                                     detailRows As Object, sheet1Totals As Object, sheet2Totals As Object, _
+                                     sheet1Additional As Object, sheet2Additional As Object, _
                                      additionalColumns1 As String, additionalColumns2 As String, _
                                      idCol As Long, sheet1TotalCol As Long, sheet2TotalCol As Long, _
                                      ByRef matchCount As Long)
@@ -1721,7 +1730,7 @@ Private Sub WriteDetailMatchResults(wsMatch As Worksheet, wsAllResults As Worksh
             matchCount = matchCount + 1
             
             ProcessMatchedDetailRows wsMatch, matchRow, id, total1, total2, detailSheet, _
-                                    dictDetailRows, dictAdditional1, dictAdditional2, _
+                                    detailRows, sheet1Additional, sheet2Additional, _
                                     additionalCols1, additionalCols2, hasAdditional1, hasAdditional2
         End If
     Next row
@@ -1734,18 +1743,18 @@ End Sub
 
 Private Sub ProcessMatchedDetailRows(wsMatch As Worksheet, ByRef matchRow As Long, _
                                      id As String, total1 As Double, total2 As Double, _
-                                     detailSheet As String, dictDetailRows As Object, _
-                                     dictAdditional1 As Object, dictAdditional2 As Object, _
+                                     detailSheet As String, allDetailRows As Object, _
+                                     sheet1Additional As Object, sheet2Additional As Object, _
                                      additionalCols1() As String, additionalCols2() As String, _
                                      hasAdditional1 As Boolean, hasAdditional2 As Boolean)
     Dim detailRows As Collection
     Dim detailRow As Object
     Dim summaryDict As Object
     
-    If Not dictDetailRows.Exists(id) Then Exit Sub
+    If Not allDetailRows.Exists(id) Then Exit Sub
     
-    Set detailRows = dictDetailRows(id)
-    Set summaryDict = GetSummaryDict(detailSheet, id, dictAdditional1, dictAdditional2)
+    Set detailRows = allDetailRows(id)
+    Set summaryDict = GetSummaryDict(detailSheet, id, sheet1Additional, sheet2Additional)
     
     For Each detailRow In detailRows
         WriteDetailMatchRow wsMatch, matchRow, id, detailRow, summaryDict, _
@@ -1827,13 +1836,13 @@ Private Function WriteDetailMatchHeader(wsMatch As Worksheet, detailSheet As Str
 End Function
 
 Private Function GetSummaryDict(detailSheet As String, id As String, _
-                                dictAdditional1 As Object, dictAdditional2 As Object) As Object
+                                sheet1Additional As Object, sheet2Additional As Object) As Object
     Set GetSummaryDict = Nothing
     
     If detailSheet = "SHEET1" Then
-        If dictAdditional2.Exists(id) Then Set GetSummaryDict = dictAdditional2(id)
+        If sheet2Additional.Exists(id) Then Set GetSummaryDict = sheet2Additional(id)
     Else
-        If dictAdditional1.Exists(id) Then Set GetSummaryDict = dictAdditional1(id)
+        If sheet1Additional.Exists(id) Then Set GetSummaryDict = sheet1Additional(id)
     End If
 End Function
 
