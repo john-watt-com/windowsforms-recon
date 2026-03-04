@@ -247,14 +247,17 @@ Private Function ValidateSetup(reconConfigSheetName As String, workflowName As S
         Exit Function
     End If
     
-    ' Check required configuration settings
+    ' Check required configuration settings are present
     Dim idCol1 As String, idCol2 As String
     Dim valueColumns1 As String, valueColumns2 As String
+    Dim additionalColumns1 As String, additionalColumns2 As String
     
     idCol1 = GetConfigValue(wsConfig, "Sheet1 ID Column", workflowName)
     idCol2 = GetConfigValue(wsConfig, "Sheet2 ID Column", workflowName)
     valueColumns1 = GetConfigValue(wsConfig, "Sheet1 Value Columns", workflowName)
     valueColumns2 = GetConfigValue(wsConfig, "Sheet2 Value Columns", workflowName)
+    additionalColumns1 = GetConfigValue(wsConfig, "Sheet1 Additional Columns", workflowName)
+    additionalColumns2 = GetConfigValue(wsConfig, "Sheet2 Additional Columns", workflowName)
     
     If Len(idCol1) = 0 Or Len(idCol2) = 0 Then
         MsgBox "Please specify both ID columns in Recon Config table.", vbCritical, "Error"
@@ -274,15 +277,76 @@ Private Function ValidateSetup(reconConfigSheetName As String, workflowName As S
         Exit Function
     End If
     
-    ' Check that both sheets are not set as detail (not supported)
-    ' (In this config, only one Detail Sheet setting is possible, so this is just a future-proof check)
     ' Check data exists
     If ws1.Cells(2, 1).value = "" Or ws2.Cells(2, 1).value = "" Then
         MsgBox "Please load data into Sheet1 and Sheet2.", vbCritical, "Error"
         Exit Function
     End If
     
+    ' Validate all configured column names exist as headers in their sheets before wiping results
+    Dim missing As String
+    
+    If FindColumnIndex(ws1, idCol1) = 0 Then
+        MsgBox "Sheet1 ID column '" & idCol1 & "' not found as a header in Sheet1.", vbCritical, "Config Error"
+        Exit Function
+    End If
+    If FindColumnIndex(ws2, idCol2) = 0 Then
+        MsgBox "Sheet2 ID column '" & idCol2 & "' not found as a header in Sheet2.", vbCritical, "Config Error"
+        Exit Function
+    End If
+    
+    missing = FindMissingColumns(ws1, valueColumns1, True)
+    If Len(missing) > 0 Then
+        MsgBox "Sheet1 value column(s) not found in Sheet1: " & missing, vbCritical, "Config Error"
+        Exit Function
+    End If
+    missing = FindMissingColumns(ws2, valueColumns2, True)
+    If Len(missing) > 0 Then
+        MsgBox "Sheet2 value column(s) not found in Sheet2: " & missing, vbCritical, "Config Error"
+        Exit Function
+    End If
+    
+    If Len(Trim(additionalColumns1)) > 0 Then
+        missing = FindMissingColumns(ws1, additionalColumns1, False)
+        If Len(missing) > 0 Then
+            MsgBox "Sheet1 additional column(s) not found in Sheet1: " & missing, vbCritical, "Config Error"
+            Exit Function
+        End If
+    End If
+    If Len(Trim(additionalColumns2)) > 0 Then
+        missing = FindMissingColumns(ws2, additionalColumns2, False)
+        If Len(missing) > 0 Then
+            MsgBox "Sheet2 additional column(s) not found in Sheet2: " & missing, vbCritical, "Config Error"
+            Exit Function
+        End If
+    End If
+    
     ValidateSetup = True
+End Function
+
+' Returns comma-separated list of column names from colNamesStr that are not found as headers in ws.
+' If stripSignPrefix=True, strips a leading + or - before looking up each name.
+Private Function FindMissingColumns(ws As Worksheet, colNamesStr As String, stripSignPrefix As Boolean) As String
+    Dim names() As String
+    Dim i As Long
+    Dim colName As String
+    Dim missing As String
+    
+    names = SplitTrimCSV(colNamesStr)
+    missing = ""
+    For i = 0 To UBound(names)
+        colName = names(i)
+        If stripSignPrefix Then
+            If Left(colName, 1) = "+" Or Left(colName, 1) = "-" Then
+                colName = Trim(Mid(colName, 2))
+            End If
+        End If
+        If FindColumnIndex(ws, colName) = 0 Then
+            If Len(missing) > 0 Then missing = missing & ", "
+            missing = missing & colName
+        End If
+    Next i
+    FindMissingColumns = missing
 End Function
 
 Private Function BuildTotalsDictionary(ws As Worksheet, idColumnName As String, valueColumnsStr As String, Optional filterExpr As String = "") As Object
@@ -1175,6 +1239,7 @@ Public Sub RunTransform(Optional workflowName As String = "")
     
     ' Read transform settings and apply prefix to sheet names
     Set transformSettings = ReadTransformSettings(wsTransformConfig, resultPrefix, workflowName)
+    If transformSettings Is Nothing Then Exit Sub
     
     ' Validate source sheet and create target sheet
     Set wsSource = ValidateSourceSheet(transformSettings("SourceSheet"))
