@@ -398,16 +398,14 @@ Private Function BuildAdditionalColumnsDictionary(ws As Worksheet, idColumnName 
         Exit Function
     End If
     
-    ' Parse additional column names
+    ' Parse additional column names and find their indexes
     Dim additionalColNames() As String
-    additionalColNames = Split(additionalColumnsStr, ",")
+    additionalColNames = SplitTrimCSV(additionalColumnsStr)
     
-    ' Find additional column indexes
     Dim additionalColIndexes() As Long
     ReDim additionalColIndexes(0 To UBound(additionalColNames))
     Dim i As Long
     For i = 0 To UBound(additionalColNames)
-        additionalColNames(i) = Trim(additionalColNames(i))
         additionalColIndexes(i) = FindColumnIndex(ws, additionalColNames(i))
         If additionalColIndexes(i) = 0 Then
             MsgBox "Additional column '" & additionalColNames(i) & "' not found in " & ws.Name, vbCritical, "Error"
@@ -472,10 +470,9 @@ Private Function BuildAllDetailRowsDictionary(ws As Worksheet, idColumnName As S
     ' Parse and validate additional columns, storing their indexes in a Collection
     hasAdditionalCols = (Len(Trim(additionalColumnsStr)) > 0)
     If hasAdditionalCols Then
-        additionalColNames = Split(additionalColumnsStr, ",")
+        additionalColNames = SplitTrimCSV(additionalColumnsStr)
         Set additionalColIndexes = New Collection
         For i = 0 To UBound(additionalColNames)
-            additionalColNames(i) = Trim(additionalColNames(i))
             colIdx = FindColumnIndex(ws, additionalColNames(i))
             If colIdx = 0 Then
                 MsgBox "Additional column '" & additionalColNames(i) & "' not found in " & ws.Name, vbCritical, "Error"
@@ -611,15 +608,8 @@ Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, sheet1Tot
     Dim lastRow As Long
     Dim r As Long
     
-    ' Parse additional column names
     hasAdditionalCols = (Len(Trim(additionalColumnsStr)) > 0)
-
-    If hasAdditionalCols Then
-        additionalColNames = Split(additionalColumnsStr, ",")
-        For i = 0 To UBound(additionalColNames)
-            additionalColNames(i) = Trim(additionalColNames(i))
-        Next i
-    End If
+    If hasAdditionalCols Then additionalColNames = SplitTrimCSV(additionalColumnsStr)
 
     ' Clear previous data and formatting in wsResults
     wsResults.Cells.Clear
@@ -665,13 +655,7 @@ Private Function WriteResultsHeader(wsResults As Worksheet, additionalColNames()
     End If
     
     lastHeaderCol = col - 1
-    
-    ' Format header
-    With wsResults.Range(wsResults.Cells(1, 1), wsResults.Cells(1, lastHeaderCol))
-        .Font.Bold = True
-        .Interior.Color = RGB(200, 200, 200)
-    End With
-    
+    FormatHeaderRow wsResults, lastHeaderCol
     WriteResultsHeader = lastHeaderCol
 End Function
 
@@ -782,16 +766,7 @@ Private Sub CreateAndFormatResultsTable(wsResults As Worksheet, lastRow As Long,
     If lastRow >= 2 Then
         Set tableRange = wsResults.Range(wsResults.Cells(1, 1), wsResults.Cells(lastRow, lastHeaderCol))
         
-        ' Delete existing table if present
-        On Error Resume Next
-        wsResults.ListObjects("ReconResultsTable").Delete
-        On Error GoTo 0
-        
-        ' Create new table
-        wsResults.ListObjects.Add(xlSrcRange, tableRange, , xlYes).Name = "ReconResultsTable"
-        
-        ' Apply table style
-        wsResults.ListObjects("ReconResultsTable").TableStyle = "TableStyleMedium2"
+        RecreateListObject wsResults, tableRange, "ReconResultsTable", "TableStyleMedium2"
     End If
     
     ' Auto-fit columns
@@ -1646,8 +1621,7 @@ Private Sub WriteAggregatedMatchResults(wsMatch As Worksheet, wsAllResults As Wo
     
     For row = 2 To tblAll.Range.Rows.Count
         isMatchValue = wsAllResults.Cells(row, 1).Value ' IsMatch column
-        If (VarType(isMatchValue) = vbBoolean And isMatchValue = True) _
-            Or (VarType(isMatchValue) = vbString And UCase(Trim(isMatchValue)) = "TRUE") Then
+        If IsRowMatch(isMatchValue) Then
             ' Copy to Match Results (skip IsMatch and Difference columns)
             matchCol = 1
             For col = idCol To lastCol
@@ -1665,18 +1639,8 @@ Private Sub WriteAggregatedMatchResults(wsMatch As Worksheet, wsAllResults As Wo
         
         Set matchTableRange = wsMatch.Range(wsMatch.Cells(1, 1), wsMatch.Cells(matchRow - 1, matchLastCol))
         
-        On Error Resume Next
-        wsMatch.ListObjects("MatchResultsTable").Delete
-        On Error GoTo 0
-        
-        wsMatch.ListObjects.Add(xlSrcRange, matchTableRange, , xlYes).Name = "MatchResultsTable"
-        wsMatch.ListObjects("MatchResultsTable").TableStyle = "TableStyleMedium3"
-        
-        ' Format Match Results header
-        With wsMatch.Range(wsMatch.Cells(1, 1), wsMatch.Cells(1, matchLastCol))
-            .Font.Bold = True
-            .Interior.Color = RGB(200, 200, 200)
-        End With
+        RecreateListObject wsMatch, matchTableRange, "MatchResultsTable", "TableStyleMedium3"
+        FormatHeaderRow wsMatch, matchLastCol
         
         ' Format number columns in Match Results (Sheet1 Total and Sheet2 Total)
         If matchLastCol >= 2 Then
@@ -1722,8 +1686,7 @@ Private Sub WriteDetailMatchResults(wsMatch As Worksheet, wsAllResults As Worksh
     matchCount = 0
     For row = 2 To tblAll.Range.Rows.Count
         isMatchValue = wsAllResults.Cells(row, 1).Value
-        If (VarType(isMatchValue) = vbBoolean And isMatchValue = True) _
-            Or (VarType(isMatchValue) = vbString And UCase(Trim(isMatchValue)) = "TRUE") Then
+        If IsRowMatch(isMatchValue) Then
             id = CStr(wsAllResults.Cells(row, idCol).value)
             total1 = wsAllResults.Cells(row, sheet1TotalCol).value
             total2 = wsAllResults.Cells(row, sheet2TotalCol).value
@@ -1767,24 +1730,10 @@ End Sub
 Private Sub ParseAdditionalColumns(additionalColumns1 As String, additionalColumns2 As String, _
                                    ByRef additionalCols1() As String, ByRef additionalCols2() As String, _
                                    ByRef hasAdditional1 As Boolean, ByRef hasAdditional2 As Boolean)
-    Dim i As Long
-    
     hasAdditional1 = (Len(Trim(additionalColumns1)) > 0)
     hasAdditional2 = (Len(Trim(additionalColumns2)) > 0)
-    
-    If hasAdditional1 Then
-        additionalCols1 = Split(additionalColumns1, ",")
-        For i = 0 To UBound(additionalCols1)
-            additionalCols1(i) = Trim(additionalCols1(i))
-        Next i
-    End If
-    
-    If hasAdditional2 Then
-        additionalCols2 = Split(additionalColumns2, ",")
-        For i = 0 To UBound(additionalCols2)
-            additionalCols2(i) = Trim(additionalCols2(i))
-        Next i
-    End If
+    If hasAdditional1 Then additionalCols1 = SplitTrimCSV(additionalColumns1)
+    If hasAdditional2 Then additionalCols2 = SplitTrimCSV(additionalColumns2)
 End Sub
 
 Private Function WriteDetailMatchHeader(wsMatch As Worksheet, detailSheet As String, _
@@ -1827,12 +1776,7 @@ Private Function WriteDetailMatchHeader(wsMatch As Worksheet, detailSheet As Str
     End If
     
     WriteDetailMatchHeader = col - 1
-    
-    ' Format header
-    With wsMatch.Range(wsMatch.Cells(1, 1), wsMatch.Cells(1, WriteDetailMatchHeader))
-        .Font.Bold = True
-        .Interior.Color = RGB(200, 200, 200)
-    End With
+    FormatHeaderRow wsMatch, WriteDetailMatchHeader
 End Function
 
 Private Function GetSummaryDict(detailSheet As String, id As String, _
@@ -1907,12 +1851,7 @@ Private Sub FormatDetailMatchTable(wsMatch As Worksheet, matchRow As Long, lastH
     
     Set matchTableRange = wsMatch.Range(wsMatch.Cells(1, 1), wsMatch.Cells(matchRow - 1, lastHeaderCol))
     
-    On Error Resume Next
-    wsMatch.ListObjects("MatchResultsTable").Delete
-    On Error GoTo 0
-    
-    wsMatch.ListObjects.Add(xlSrcRange, matchTableRange, , xlYes).Name = "MatchResultsTable"
-    wsMatch.ListObjects("MatchResultsTable").TableStyle = "TableStyleMedium3"
+    RecreateListObject wsMatch, matchTableRange, "MatchResultsTable", "TableStyleMedium3"
     
     ' Format number columns (totals)
     If detailSheet = "SHEET1" And hasAdditional1 Then
@@ -1977,18 +1916,8 @@ Private Sub WriteErrorResults(wsError As Worksheet, wsAllResults As Worksheet, i
         
         Set errorTableRange = wsError.Range(wsError.Cells(1, 1), wsError.Cells(errorRow - 1, errorLastCol))
         
-        On Error Resume Next
-        wsError.ListObjects("ErrorResultsTable").Delete
-        On Error GoTo 0
-        
-        wsError.ListObjects.Add(xlSrcRange, errorTableRange, , xlYes).Name = "ErrorResultsTable"
-        wsError.ListObjects("ErrorResultsTable").TableStyle = "TableStyleMedium1"
-        
-        ' Format Error Results header
-        With wsError.Range(wsError.Cells(1, 1), wsError.Cells(1, errorLastCol))
-            .Font.Bold = True
-            .Interior.Color = RGB(200, 200, 200)
-        End With
+        RecreateListObject wsError, errorTableRange, "ErrorResultsTable", "TableStyleMedium1"
+        FormatHeaderRow wsError, errorLastCol
         
         ' Format number columns in Error Results (Difference, Sheet1 Total, Sheet2 Total - skip ID)
         If errorLastCol >= 3 Then
@@ -2000,6 +1929,45 @@ Private Sub WriteErrorResults(wsError As Worksheet, wsAllResults As Worksheet, i
         
         wsError.Columns("A:" & ColLetter(errorLastCol)).AutoFit
     End If
+End Sub
+
+' Helper: Split a comma-separated string and trim each element
+Private Function SplitTrimCSV(str As String) As String()
+    Dim parts() As String
+    Dim i As Long
+    parts = Split(str, ",")
+    For i = 0 To UBound(parts)
+        parts(i) = Trim(parts(i))
+    Next i
+    SplitTrimCSV = parts
+End Function
+
+' Helper: Test if an IsMatch cell value is truthy (supports both Boolean and string "TRUE")
+Private Function IsRowMatch(isMatchValue As Variant) As Boolean
+    If VarType(isMatchValue) = vbBoolean Then
+        IsRowMatch = (isMatchValue = True)
+    ElseIf VarType(isMatchValue) = vbString Then
+        IsRowMatch = (UCase(Trim(isMatchValue)) = "TRUE")
+    Else
+        IsRowMatch = False
+    End If
+End Function
+
+' Helper: Format row 1 of a worksheet as a bold gray header
+Private Sub FormatHeaderRow(ws As Worksheet, lastCol As Long)
+    With ws.Range(ws.Cells(1, 1), ws.Cells(1, lastCol))
+        .Font.Bold = True
+        .Interior.Color = RGB(200, 200, 200)
+    End With
+End Sub
+
+' Helper: Delete an existing ListObject by name (if present), recreate it from a range, and apply a style
+Private Sub RecreateListObject(ws As Worksheet, tableRange As Range, tableName As String, tableStyle As String)
+    On Error Resume Next
+    ws.ListObjects(tableName).Delete
+    On Error GoTo 0
+    ws.ListObjects.Add(xlSrcRange, tableRange, , xlYes).Name = tableName
+    ws.ListObjects(tableName).TableStyle = tableStyle
 End Sub
 
 ' Helper: Apply prefix to sheet name
