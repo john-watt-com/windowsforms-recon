@@ -1090,6 +1090,52 @@ SaveError:
     MsgBox "Error saving sheet: " & Err.Description, vbCritical, "Error"
 End Sub
 
+' Ask user whether to save the transform upload result sheet to a new .xls file
+Private Sub OfferSaveTransformResult(ws As Worksheet)
+    Dim response As VbMsgBoxResult
+    Dim filePath As Variant
+    Dim wb As Workbook
+    Dim fileName As String
+    Dim defaultPath As String
+    Dim sheetName As String
+
+    response = MsgBox("Save '" & ws.Name & "' to a new file?", vbYesNo + vbQuestion, "Save Upload Result")
+    If response <> vbYes Then Exit Sub
+
+    sheetName = ws.Name
+
+    defaultPath = ThisWorkbook.Path
+    If Len(defaultPath) > 0 Then defaultPath = defaultPath & "\"
+
+    filePath = Application.GetSaveAsFilename( _
+        InitialFileName:=defaultPath & sheetName & "_" & Format(Now, "yyyy-mm-dd_hhnn") & ".xls", _
+        FileFilter:="Excel 97-2003 Workbook (*.xls), *.xls", _
+        Title:="Save " & sheetName & " as Excel 97-2003 Workbook")
+
+    If filePath = False Then Exit Sub
+
+    ' Ensure .xls extension
+    If LCase(Right(filePath, 4)) <> ".xls" Then filePath = filePath & ".xls"
+
+    On Error GoTo SaveResultError
+
+    ws.Copy
+    Set wb = ActiveWorkbook
+    wb.SaveAs fileName:=filePath, FileFormat:=xlExcel8
+    wb.Close SaveChanges:=False
+
+    fileName = Mid(filePath, InStrRev(filePath, "\") + 1)
+    LogActivity "Export", "", "Transform result: " & sheetName & " | File: " & fileName, "Success", 0
+
+    response = MsgBox("Saved to: " & filePath & vbCrLf & vbCrLf & "Open the file?", vbYesNo + vbQuestion, "Saved")
+    If response = vbYes Then Workbooks.Open filePath
+    Exit Sub
+
+SaveResultError:
+    LogActivity "Export", "", "Error saving transform result: " & Err.Description, "Error", 0
+    MsgBox "Error saving file: " & Err.Description, vbCritical, "Error"
+End Sub
+
 ' ========================================
 ' TRANSFORMATION MODULE
 ' ========================================
@@ -1158,6 +1204,7 @@ Public Sub RunTransform(Optional workflowName As String = "")
     If wsSource.Visible <> xlSheetVisible Then wsSource.Visible = xlSheetVisible
     If wsTarget.Visible <> xlSheetVisible Then wsTarget.Visible = xlSheetVisible
     wsTarget.Activate
+    OfferSaveTransformResult wsTarget
     ReconForm.Show vbModeless
     
     Exit Sub
