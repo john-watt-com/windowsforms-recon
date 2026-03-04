@@ -528,58 +528,53 @@ Private Function FindColumnIndex(ws As Worksheet, columnName As String) As Long
 End Function
 
 Private Function GetConfigValue(wsConfig As Worksheet, settingName As String, Optional workflowName As String = "") As String
-    ' Get configuration value from config table by setting name and optional workflow filter (case-insensitive)
-    GetConfigValue = ""
-    
-    ' Get the first table in the config sheet
     Dim tblConfig As ListObject
-    On Error Resume Next
-    If wsConfig.ListObjects.Count > 0 Then
-        Set tblConfig = wsConfig.ListObjects(1)
-    End If
-    On Error GoTo 0
-    
-    If tblConfig Is Nothing Then Exit Function
-    
-    ' Find Setting, Value, and optional Workflow column indexes
-    Dim settingColIndex As Long, valueColIndex As Long, workflowColIndex As Long
+    Dim settingColIndex As Long
+    Dim valueColIndex As Long
+    Dim workflowColIndex As Long
     Dim col As Long
-    
+    Dim row As Long
+    Dim settingNameUpper As String
+    Dim workflowNameUpper As String
+
+    GetConfigValue = ""
+
+    On Error Resume Next
+    If wsConfig.ListObjects.Count > 0 Then Set tblConfig = wsConfig.ListObjects(1)
+    On Error GoTo 0
+
+    If tblConfig Is Nothing Then Exit Function
+
     For col = 1 To tblConfig.ListColumns.Count
         Select Case UCase(Trim(tblConfig.HeaderRowRange.Cells(1, col).value))
-            Case "SETTING"
-                settingColIndex = col
-            Case "VALUE"
-                valueColIndex = col
-            Case "WORKFLOW"
-                workflowColIndex = col
+            Case "SETTING":  settingColIndex  = col
+            Case "VALUE":    valueColIndex    = col
+            Case "WORKFLOW": workflowColIndex = col
         End Select
     Next col
-    
+
     If settingColIndex = 0 Or valueColIndex = 0 Then Exit Function
-    
-    ' Search for the setting (case-insensitive) and optional workflow match
-    Dim row As Long
-    Dim settingNameUpper As String, workflowNameUpper As String
-    settingNameUpper = UCase(Trim(settingName))
+
+    settingNameUpper  = UCase(Trim(settingName))
     workflowNameUpper = UCase(Trim(workflowName))
-    
+
     For row = 1 To tblConfig.ListRows.Count
-        ' Check if setting matches
-        If UCase(Trim(CStr(tblConfig.DataBodyRange.Cells(row, settingColIndex).value))) = settingNameUpper Then
-            ' If workflow filtering is requested and Workflow column exists
-            If Len(workflowName) > 0 And workflowColIndex > 0 Then
-                ' Check if workflow matches
-                If UCase(Trim(CStr(tblConfig.DataBodyRange.Cells(row, workflowColIndex).value))) = workflowNameUpper Then
-                    GetConfigValue = Trim(CStr(tblConfig.DataBodyRange.Cells(row, valueColIndex).value))
-                    Exit Function
-                End If
-            Else
-                ' No workflow filtering - return first match
-                GetConfigValue = Trim(CStr(tblConfig.DataBodyRange.Cells(row, valueColIndex).value))
-                Exit Function
-            End If
+        ' Skip rows where setting name doesn't match
+        If UCase(Trim(CStr(tblConfig.DataBodyRange.Cells(row, settingColIndex).value))) <> settingNameUpper Then GoTo NextRow
+
+        ' No workflow filter requested - return first match
+        If Len(workflowName) = 0 Or workflowColIndex = 0 Then
+            GetConfigValue = Trim(CStr(tblConfig.DataBodyRange.Cells(row, valueColIndex).value))
+            Exit Function
         End If
+
+        ' Workflow filter requested - check if this row matches
+        If UCase(Trim(CStr(tblConfig.DataBodyRange.Cells(row, workflowColIndex).value))) = workflowNameUpper Then
+            GetConfigValue = Trim(CStr(tblConfig.DataBodyRange.Cells(row, valueColIndex).value))
+            Exit Function
+        End If
+
+NextRow:
     Next row
 End Function
 
