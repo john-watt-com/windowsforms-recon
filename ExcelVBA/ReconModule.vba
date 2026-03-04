@@ -1031,11 +1031,13 @@ Public Sub ImportExcelFile(targetSheet As Worksheet)
         details = "File: " & fileName & " | Target: " & targetSheet.Name
         LogActivity "Import", "", details, "Success", rowCount
         
-        ' Update form textbox to show loaded file
+        ' Update form textbox to show loaded file (with full path as tooltip)
         If targetSheet.Name = "Sheet1" Then
             ReconForm.txtFile1.Text = fileName
+            ReconForm.txtFile1.ControlTipText = filePath
         ElseIf targetSheet.Name = "Sheet2" Then
             ReconForm.txtFile2.Text = fileName
+            ReconForm.txtFile2.ControlTipText = filePath
         End If
         
         MsgBox "Successfully loaded data into " & targetSheet.Name, vbInformation, "Success"
