@@ -444,71 +444,59 @@ NextRowAdditional:
 End Function
 
 Private Function BuildAllDetailRowsDictionary(ws As Worksheet, idColumnName As String, additionalColumnsStr As String, Optional filterExpr As String = "") As Object
-    ' Returns Dictionary with ID as key and Collection of all row dictionaries as value
-    ' Each row dictionary contains column name -> value pairs
     Dim dict As Object
-    Set dict = CreateObject("Scripting.Dictionary")
-    
-    ' Always build detail rows, even if no additional columns specified
-    
-    ' Find ID column index
     Dim idColIndex As Long
+    Dim additionalColNames() As String
+    Dim additionalColIndexes As Collection
+    Dim hasAdditionalCols As Boolean
+    Dim lastRow As Long
+    Dim row As Long
+    Dim i As Long
+    Dim id As String
+    Dim colIdx As Long
+    Dim rowDict As Object
+    Dim rowCollection As Collection
+
+    Set dict = CreateObject("Scripting.Dictionary")
+
     idColIndex = FindColumnIndex(ws, idColumnName)
     If idColIndex = 0 Then
         Set BuildAllDetailRowsDictionary = dict
         Exit Function
     End If
-    
-    ' Parse additional column names only if specified
-    Dim additionalColNames() As String
-    Dim additionalColIndexes() As Long
-    Dim hasAdditionalCols As Boolean
+
+    ' Parse and validate additional columns, storing their indexes in a Collection
     hasAdditionalCols = (Len(Trim(additionalColumnsStr)) > 0)
-    Dim i As Long
     If hasAdditionalCols Then
         additionalColNames = Split(additionalColumnsStr, ",")
-        ReDim additionalColIndexes(0 To UBound(additionalColNames))
+        Set additionalColIndexes = New Collection
         For i = 0 To UBound(additionalColNames)
             additionalColNames(i) = Trim(additionalColNames(i))
-            additionalColIndexes(i) = FindColumnIndex(ws, additionalColNames(i))
-            If additionalColIndexes(i) = 0 Then
+            colIdx = FindColumnIndex(ws, additionalColNames(i))
+            If colIdx = 0 Then
                 MsgBox "Additional column '" & additionalColNames(i) & "' not found in " & ws.Name, vbCritical, "Error"
                 Set BuildAllDetailRowsDictionary = dict
                 Exit Function
             End If
+            additionalColIndexes.Add colIdx
         Next i
     End If
-    
-    ' Loop through data rows (starting from row 2)
-    Dim lastRow As Long
+
     lastRow = ws.Cells(ws.Rows.Count, idColIndex).End(xlUp).row
-    
-    Dim row As Long, id As String
-    Dim rowDict As Object
-    Dim rowCollection As Collection
-    
+
     For row = 2 To lastRow
-        ' Apply filter if specified
-        If Len(Trim(filterExpr)) > 0 Then
-            If Not EvaluateRowFilter(ws, row, filterExpr) Then
-                GoTo NextRowAll
-            End If
-        End If
-        
+        If Len(filterExpr) > 0 And Not EvaluateRowFilter(ws, row, filterExpr) Then GoTo NextRowAll
+
         id = Trim(CStr(ws.Cells(row, idColIndex).value))
-        
-        ' Skip blank IDs
         If Len(id) = 0 Then GoTo NextRowAll
-        
-        ' Create dictionary for this row
+
         Set rowDict = CreateObject("Scripting.Dictionary")
         If hasAdditionalCols Then
-            For i = 0 To UBound(additionalColIndexes)
-                rowDict.Add additionalColNames(i), ws.Cells(row, additionalColIndexes(i)).value
+            For i = 0 To UBound(additionalColNames)
+                rowDict.Add additionalColNames(i), ws.Cells(row, additionalColIndexes(i + 1)).value
             Next i
         End If
-        
-        ' Add to collection for this ID
+
         If Not dict.Exists(id) Then
             Set rowCollection = New Collection
             dict.Add id, rowCollection
@@ -516,10 +504,10 @@ Private Function BuildAllDetailRowsDictionary(ws As Worksheet, idColumnName As S
             Set rowCollection = dict(id)
         End If
         rowCollection.Add rowDict
-        
+
 NextRowAll:
     Next row
-    
+
     Set BuildAllDetailRowsDictionary = dict
 End Function
 
@@ -1387,23 +1375,36 @@ Private Sub LogTransformSuccess(workflowName As String, transformSettings As Obj
 End Sub
 
 Private Sub ApplyTransformation(wsSource As Worksheet, wsTarget As Worksheet, columnDefs As Collection, Optional filterExpr As String = "", Optional sortOrder As String = "")
-    Dim colDef As Object
-    Dim col As Long
-    Dim lastSourceRow As Long
-    Dim sourceRow As Long
-    Dim targetRow As Long
-    Dim sourceColIndex As Long
-    Dim lastCol As Long
-    Dim lastRow As Long
-    Dim tableRange As Range
-    Dim tbl As ListObject
-    Dim i As Long, j As Long
-
-    ' Build array of column defs sorted by Order -> map to sequential physical columns 1,2,3...
-    Dim colCount As Long
-    colCount = columnDefs.Count
     Dim sortedDefs() As Object
+    Dim colCount As Long
+    Dim targetRow As Long
+
+    ' Sort column defs by Order into a sequential array
+    sortedDefs = SortColumnDefsByOrder(columnDefs)
+    colCount = columnDefs.Count
+
+    ' Write headers and data rows, returns last written target row
+    targetRow = WriteTransformData(wsSource, wsTarget, sortedDefs, colCount, filterExpr)
+    If targetRow < 2 Then Exit Sub
+
+    ' Create table and apply formula columns
+    CreateTransformTable wsTarget, targetRow, colCount, sortedDefs
+
+    ' Sort and autofit
+    If Len(sortOrder) > 0 Then ApplySorting wsTarget, sortOrder
+    wsTarget.Columns("A:" & ColLetter(colCount)).AutoFit
+End Sub
+
+Private Function SortColumnDefsByOrder(columnDefs As Collection) As Object()
+    Dim colCount As Long
+    Dim i As Long, j As Long
+    Dim colDef As Object
+    Dim tempDef As Object
+    Dim sortedDefs() As Object
+
+    colCount = columnDefs.Count
     ReDim sortedDefs(1 To colCount)
+
     i = 1
     For Each colDef In columnDefs
         Set sortedDefs(i) = colDef
@@ -1411,7 +1412,6 @@ Private Sub ApplyTransformation(wsSource As Worksheet, wsTarget As Worksheet, co
     Next colDef
 
     ' Bubble sort by Order ascending
-    Dim tempDef As Object
     For i = 1 To colCount - 1
         For j = 1 To colCount - i
             If sortedDefs(j)("Order") > sortedDefs(j + 1)("Order") Then
@@ -1422,24 +1422,31 @@ Private Sub ApplyTransformation(wsSource As Worksheet, wsTarget As Worksheet, co
         Next j
     Next i
 
-    ' Write headers using sequential physical columns (no gaps)
+    SortColumnDefsByOrder = sortedDefs
+End Function
+
+Private Function WriteTransformData(wsSource As Worksheet, wsTarget As Worksheet, sortedDefs() As Object, colCount As Long, filterExpr As String) As Long
+    Dim i As Long
+    Dim sourceRow As Long
+    Dim targetRow As Long
+    Dim lastSourceRow As Long
+    Dim sourceColIndex As Long
+    Dim colDef As Object
+
+    ' Write headers
     For i = 1 To colCount
         wsTarget.Cells(1, i).value = sortedDefs(i)("TargetColumn")
     Next i
 
-    ' Determine source data range
     lastSourceRow = wsSource.Cells(wsSource.Rows.Count, 1).End(xlUp).row
-
     If lastSourceRow < 2 Then
         MsgBox "Source sheet has no data rows.", vbExclamation, "Warning"
-        Exit Sub
+        WriteTransformData = 0
+        Exit Function
     End If
 
-    ' Populate rows with EXISTING and STATIC columns (applying filter)
     targetRow = 1
-
     For sourceRow = 2 To lastSourceRow
-        ' Apply filter if specified
         If Len(filterExpr) > 0 Then
             If Not EvaluateRowFilter(wsSource, sourceRow, filterExpr) Then
                 GoTo NextSourceRow
@@ -1447,60 +1454,50 @@ Private Sub ApplyTransformation(wsSource As Worksheet, wsTarget As Worksheet, co
         End If
 
         targetRow = targetRow + 1
-
         For i = 1 To colCount
             Set colDef = sortedDefs(i)
-            col = i  ' sequential physical column
-
             Select Case colDef("Type")
                 Case "EXISTING"
                     sourceColIndex = FindColumnIndex(wsSource, colDef("Source"))
                     If sourceColIndex > 0 Then
                         If wsSource.Cells(sourceRow, sourceColIndex).HasFormula Then
-                            wsTarget.Cells(targetRow, col).Formula = wsSource.Cells(sourceRow, sourceColIndex).Formula
+                            wsTarget.Cells(targetRow, i).Formula = wsSource.Cells(sourceRow, sourceColIndex).Formula
                         Else
-                            wsTarget.Cells(targetRow, col).value = wsSource.Cells(sourceRow, sourceColIndex).value
+                            wsTarget.Cells(targetRow, i).value = wsSource.Cells(sourceRow, sourceColIndex).value
                         End If
                     End If
                 Case "STATIC"
-                    wsTarget.Cells(targetRow, col).value = colDef("Source")
-                Case "FORMULA"
-                    ' Skip for now - will add after creating table
+                    wsTarget.Cells(targetRow, i).value = colDef("Source")
             End Select
         Next i
 
 NextSourceRow:
     Next sourceRow
 
-    ' Check if any rows were copied
     If targetRow < 2 Then
         MsgBox "No rows match the filter criteria.", vbExclamation, "Warning"
-        Exit Sub
+        WriteTransformData = 0
+        Exit Function
     End If
 
-    lastCol = colCount
-    lastRow = targetRow
+    WriteTransformData = targetRow
+End Function
+
+Private Sub CreateTransformTable(wsTarget As Worksheet, lastRow As Long, lastCol As Long, sortedDefs() As Object)
+    Dim tableRange As Range
+    Dim tbl As ListObject
+    Dim i As Long
 
     Set tableRange = wsTarget.Range(wsTarget.Cells(1, 1), wsTarget.Cells(lastRow, lastCol))
-
-    ' Create new table
     Set tbl = wsTarget.ListObjects.Add(xlSrcRange, tableRange, , xlYes)
     tbl.TableStyle = "TableStyleLight1"
 
-    ' Now add FORMULA columns - table will auto-fill them down
-    For i = 1 To colCount
+    ' Add FORMULA columns - table calculated column feature auto-fills down
+    For i = 1 To lastCol
         If sortedDefs(i)("Type") = "FORMULA" Then
             wsTarget.Cells(2, i).Formula = sortedDefs(i)("Source")
         End If
     Next i
-
-    ' Apply sorting if specified
-    If Len(sortOrder) > 0 Then
-        ApplySorting wsTarget, sortOrder
-    End If
-
-    ' Auto-fit columns
-    wsTarget.Columns("A:" & ColLetter(lastCol)).AutoFit
 End Sub
 
 Private Sub ApplySorting(ws As Worksheet, sortOrder As String)
