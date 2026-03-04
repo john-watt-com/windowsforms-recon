@@ -1181,6 +1181,12 @@ Public Sub RunTransform(Optional workflowName As String = "")
     If wsSource Is Nothing Then Exit Sub
     
     Set wsTarget = GetOrCreateWorksheet(transformSettings("TargetSheet"))
+
+    ' Remove any existing tables before clearing, then start from scratch
+    Dim tblExisting As ListObject
+    For Each tblExisting In wsTarget.ListObjects
+        tblExisting.Unlist
+    Next tblExisting
     wsTarget.Cells.Clear
     
     ' Read column definitions
@@ -1391,44 +1397,64 @@ Private Sub ApplyTransformation(wsSource As Worksheet, wsTarget As Worksheet, co
     Dim lastRow As Long
     Dim tableRange As Range
     Dim tbl As ListObject
-    
-    ' Write headers
+    Dim i As Long, j As Long
+
+    ' Build array of column defs sorted by Order -> map to sequential physical columns 1,2,3...
+    Dim colCount As Long
+    colCount = columnDefs.Count
+    Dim sortedDefs() As Object
+    ReDim sortedDefs(1 To colCount)
+    i = 1
     For Each colDef In columnDefs
-        col = colDef("Order")
-        wsTarget.Cells(1, col).value = colDef("TargetColumn")
+        Set sortedDefs(i) = colDef
+        i = i + 1
     Next colDef
-    
+
+    ' Bubble sort by Order ascending
+    Dim tempDef As Object
+    For i = 1 To colCount - 1
+        For j = 1 To colCount - i
+            If sortedDefs(j)("Order") > sortedDefs(j + 1)("Order") Then
+                Set tempDef = sortedDefs(j)
+                Set sortedDefs(j) = sortedDefs(j + 1)
+                Set sortedDefs(j + 1) = tempDef
+            End If
+        Next j
+    Next i
+
+    ' Write headers using sequential physical columns (no gaps)
+    For i = 1 To colCount
+        wsTarget.Cells(1, i).value = sortedDefs(i)("TargetColumn")
+    Next i
+
     ' Determine source data range
     lastSourceRow = wsSource.Cells(wsSource.Rows.Count, 1).End(xlUp).row
-    
+
     If lastSourceRow < 2 Then
         MsgBox "Source sheet has no data rows.", vbExclamation, "Warning"
         Exit Sub
     End If
-    
-    ' Populate rows with EXISTING and STATIC columns only (applying filter)
-    targetRow = 1 ' Start at 1, will increment to 2 for first data row
-    
+
+    ' Populate rows with EXISTING and STATIC columns (applying filter)
+    targetRow = 1
+
     For sourceRow = 2 To lastSourceRow
         ' Apply filter if specified
         If Len(filterExpr) > 0 Then
             If Not EvaluateRowFilter(wsSource, sourceRow, filterExpr) Then
-                ' Skip this row - doesn't match filter
                 GoTo NextSourceRow
             End If
         End If
-        
-        ' Row passes filter - copy it
+
         targetRow = targetRow + 1
-        
-        For Each colDef In columnDefs
-            col = colDef("Order")
-            
+
+        For i = 1 To colCount
+            Set colDef = sortedDefs(i)
+            col = i  ' sequential physical column
+
             Select Case colDef("Type")
                 Case "EXISTING"
-                    ' Copy from source column
                     sourceColIndex = FindColumnIndex(wsSource, colDef("Source"))
-                    
                     If sourceColIndex > 0 Then
                         If wsSource.Cells(sourceRow, sourceColIndex).HasFormula Then
                             wsTarget.Cells(targetRow, col).Formula = wsSource.Cells(sourceRow, sourceColIndex).Formula
@@ -1436,55 +1462,43 @@ Private Sub ApplyTransformation(wsSource As Worksheet, wsTarget As Worksheet, co
                             wsTarget.Cells(targetRow, col).value = wsSource.Cells(sourceRow, sourceColIndex).value
                         End If
                     End If
-                    
                 Case "STATIC"
-                    ' Static value - same for all rows
                     wsTarget.Cells(targetRow, col).value = colDef("Source")
-                    
                 Case "FORMULA"
                     ' Skip for now - will add after creating table
-                    
             End Select
-        Next colDef
-        
+        Next i
+
 NextSourceRow:
     Next sourceRow
-    
+
     ' Check if any rows were copied
     If targetRow < 2 Then
         MsgBox "No rows match the filter criteria.", vbExclamation, "Warning"
         Exit Sub
     End If
-    
-    ' Create table with the data we have
-    lastCol = columnDefs.Count
-    lastRow = targetRow ' Use actual target row count after filtering
-    
+
+    lastCol = colCount
+    lastRow = targetRow
+
     Set tableRange = wsTarget.Range(wsTarget.Cells(1, 1), wsTarget.Cells(lastRow, lastCol))
-    
-    ' Delete existing table if present
-    On Error Resume Next
-    wsTarget.ListObjects(1).Delete
-    On Error GoTo 0
-    
+
     ' Create new table
     Set tbl = wsTarget.ListObjects.Add(xlSrcRange, tableRange, , xlYes)
-    tbl.TableStyle = "TableStyleMedium2"
-    
+    tbl.TableStyle = "TableStyleLight1"
+
     ' Now add FORMULA columns - table will auto-fill them down
-    For Each colDef In columnDefs
-        If colDef("Type") = "FORMULA" Then
-            col = colDef("Order")
-            ' Add formula to first data row - table calculated column feature will auto-fill
-            wsTarget.Cells(2, col).Formula = colDef("Source")
+    For i = 1 To colCount
+        If sortedDefs(i)("Type") = "FORMULA" Then
+            wsTarget.Cells(2, i).Formula = sortedDefs(i)("Source")
         End If
-    Next colDef
-    
+    Next i
+
     ' Apply sorting if specified
     If Len(sortOrder) > 0 Then
         ApplySorting wsTarget, sortOrder
     End If
-    
+
     ' Auto-fit columns
     wsTarget.Columns("A:" & ColLetter(lastCol)).AutoFit
 End Sub
