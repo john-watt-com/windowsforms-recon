@@ -137,6 +137,13 @@ Public Sub RunReconciliation(Optional workflowName As String = "")
     
     ' Log and report success
     LogReconciliationSuccess workflowName, reconConfigSheetName, matchCount, errorCount, reconSettings("Tolerance"), reconSettings("DetailSheet"), allIDs.Count
+
+    ' Show Match Results and return focus to form
+    Dim wsMatchResults As Worksheet
+    Set wsMatchResults = GetOrCreateWorksheet(ApplyPrefix(resultPrefix, "Match Results"))
+    If wsMatchResults.Visible <> xlSheetVisible Then wsMatchResults.Visible = xlSheetVisible
+    wsMatchResults.Activate
+    ReconForm.Show vbModeless
 End Sub
 
 Private Function ReadReconciliationConfig(wsConfig As Worksheet, workflowName As String) As Object
@@ -1185,7 +1192,9 @@ Public Sub RunTransform(Optional workflowName As String = "")
     rowCount = wsTarget.Cells(wsTarget.Rows.Count, 1).End(xlUp).row - 1
     LogTransformSuccess workflowName, transformSettings, rowCount, Timer - startTime
     
-    ' Show results and return focus to form
+    ' Unhide source and target sheets if hidden, then show results and return focus to form
+    If wsSource.Visible <> xlSheetVisible Then wsSource.Visible = xlSheetVisible
+    If wsTarget.Visible <> xlSheetVisible Then wsTarget.Visible = xlSheetVisible
     wsTarget.Activate
     ReconForm.Show vbModeless
     
