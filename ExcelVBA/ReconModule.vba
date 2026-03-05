@@ -132,8 +132,8 @@ Public Sub RunReconciliation(Optional workflowName As String = "")
     Set allIDs = GetUniqueIDs(reconData("Sheet1Totals"), reconData("Sheet2Totals"))
     
     ' Write and split results
-    WriteResults wsResults, allIDs, reconData("Sheet1Totals"), reconData("Sheet2Totals"), reconData("Sheet1Additional"), reconSettings("AdditionalColumns1"), reconSettings("Tolerance"), reconSettings("SortOrder")
-    SplitResults wsResults, ws1, ws2, reconSettings("IdCol1"), reconSettings("IdCol2"), reconSettings("DetailSheet"), reconData("DetailRows"), reconData("Sheet1Totals"), reconData("Sheet2Totals"), reconData("Sheet1Additional"), reconData("Sheet2Additional"), reconSettings("AdditionalColumns1"), reconSettings("AdditionalColumns2"), resultPrefix, matchCount, errorCount
+    WriteResults wsResults, allIDs, reconData("Sheet1Totals"), reconData("Sheet2Totals"), reconData("Sheet1Additional"), reconSettings("AdditionalColumns1"), reconSettings("Tolerance"), reconSettings("SortOrder"), reconSettings("ColumnOrder")
+    SplitResults wsResults, ws1, ws2, reconSettings("IdCol1"), reconSettings("IdCol2"), reconSettings("DetailSheet"), reconData("DetailRows"), reconData("Sheet1Totals"), reconData("Sheet2Totals"), reconData("Sheet1Additional"), reconData("Sheet2Additional"), reconSettings("AdditionalColumns1"), reconSettings("AdditionalColumns2"), resultPrefix, matchCount, errorCount, reconSettings("ColumnOrder")
     
     ' Log and report success
     LogReconciliationSuccess workflowName, reconConfigSheetName, matchCount, errorCount, reconSettings("Tolerance"), reconSettings("DetailSheet"), allIDs.Count
@@ -179,6 +179,7 @@ Private Function ReadReconciliationConfig(wsConfig As Worksheet, workflowName As
     ' Read detail and sort settings
     settings("DetailSheet") = Trim(UCase(GetConfigValue(wsConfig, "Detail Sheet", workflowName)))
     settings("SortOrder") = GetConfigValue(wsConfig, "Sort Order", workflowName)
+    settings("ColumnOrder") = GetConfigValue(wsConfig, "Column Order", workflowName)
     
     Set ReadReconciliationConfig = settings
 End Function
@@ -715,63 +716,112 @@ Private Function GetUniqueIDs(sheet1Totals As Object, sheet2Totals As Object) As
     Set GetUniqueIDs = allIDs
 End Function
 
-Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, sheet1Totals As Object, sheet2Totals As Object, sheet1Additional As Object, additionalColumnsStr As String, tolerance As Double, sortOrder As String)
-    ' Declare all variables at the top
+' Returns the complete ordered column name array for the results sheet.
+' Columns in columnOrderStr come first; any not listed are appended in default order.
+' Generic: reorders defaultCols per specifiedOrderStr, appending any unmentioned ones at the end.
+Private Function ReorderColumns(defaultCols() As String, specifiedOrderStr As String) As String()
+    If Len(Trim(specifiedOrderStr)) = 0 Then
+        ReorderColumns = defaultCols
+        Exit Function
+    End If
+
+    Dim specified() As String
+    specified = SplitTrimCSV(specifiedOrderStr)
+
+    Dim seen As Object
+    Set seen = CreateObject("Scripting.Dictionary")
+    Dim resultCols() As String
+    ReDim resultCols(0 To UBound(defaultCols))
+    Dim resultCount As Long
+    Dim i As Long, j As Long
+    Dim colName As String
+    Dim isKnown As Boolean
+
+    For i = 0 To UBound(specified)
+        colName = specified(i)
+        If Not seen.Exists(colName) Then
+            isKnown = False
+            For j = 0 To UBound(defaultCols)
+                If defaultCols(j) = colName Then isKnown = True: Exit For
+            Next j
+            If isKnown Then
+                resultCols(resultCount) = colName
+                seen.Add colName, 1
+                resultCount = resultCount + 1
+            End If
+        End If
+    Next i
+
+    For i = 0 To UBound(defaultCols)
+        If Not seen.Exists(defaultCols(i)) Then
+            resultCols(resultCount) = defaultCols(i)
+            resultCount = resultCount + 1
+        End If
+    Next i
+
+    ReDim Preserve resultCols(0 To resultCount - 1)
+    ReorderColumns = resultCols
+End Function
+
+Private Function BuildColumnOrder(columnOrderStr As String, additionalColNames() As String, hasAdditionalCols As Boolean) As String()
+    Dim totalCols As Long
+    Dim i As Long
+    totalCols = 5
+    If hasAdditionalCols Then totalCols = totalCols + UBound(additionalColNames) + 1
+
+    Dim defaultCols() As String
+    ReDim defaultCols(0 To totalCols - 1)
+    defaultCols(0) = "IsMatch"
+    defaultCols(1) = "Difference"
+    defaultCols(2) = "ID"
+    defaultCols(3) = "Sheet1 Total"
+    defaultCols(4) = "Sheet2 Total"
+    If hasAdditionalCols Then
+        For i = 0 To UBound(additionalColNames)
+            defaultCols(5 + i) = additionalColNames(i)
+        Next i
+    End If
+
+    BuildColumnOrder = ReorderColumns(defaultCols, columnOrderStr)
+End Function
+
+Private Sub WriteResults(wsResults As Worksheet, allIDs As Collection, sheet1Totals As Object, sheet2Totals As Object, sheet1Additional As Object, additionalColumnsStr As String, tolerance As Double, sortOrder As String, Optional columnOrder As String = "")
     Dim additionalColNames() As String
     Dim hasAdditionalCols As Boolean
-    Dim i As Long
+    Dim orderedCols() As String
     Dim lastHeaderCol As Long
     Dim rowData As Collection
     Dim lastRow As Long
-    Dim r As Long
-    
+
     hasAdditionalCols = (Len(Trim(additionalColumnsStr)) > 0)
     If hasAdditionalCols Then additionalColNames = SplitTrimCSV(additionalColumnsStr)
+
+    orderedCols = BuildColumnOrder(columnOrder, additionalColNames, hasAdditionalCols)
 
     ' Clear previous data and formatting in wsResults
     wsResults.Cells.Clear
 
     ' Write header
-    lastHeaderCol = WriteResultsHeader(wsResults, additionalColNames, hasAdditionalCols)
+    lastHeaderCol = WriteResultsHeader(wsResults, orderedCols)
 
     ' Build and sort row data
     Set rowData = BuildResultsRowData(allIDs, sheet1Totals, sheet2Totals, sheet1Additional, additionalColNames, hasAdditionalCols, tolerance)
     SortRowData rowData, sortOrder, wsResults
 
     ' Write data rows
-    lastRow = WriteResultsDataRows(wsResults, rowData, additionalColNames, hasAdditionalCols)
-
-    ' Force IsMatch column to Boolean (TRUE/FALSE)
-    For r = 2 To lastRow
-        wsResults.Cells(r, 1).Value = CBool(wsResults.Cells(r, 1).Value)
-    Next r
+    lastRow = WriteResultsDataRows(wsResults, rowData, orderedCols)
 
     ' Create and format table
-    CreateAndFormatResultsTable wsResults, lastRow, lastHeaderCol
+    CreateAndFormatResultsTable wsResults, lastRow, lastHeaderCol, orderedCols
 End Sub
 
-Private Function WriteResultsHeader(wsResults As Worksheet, additionalColNames() As String, hasAdditionalCols As Boolean) As Long
-    Dim col As Long
+Private Function WriteResultsHeader(wsResults As Worksheet, orderedCols() As String) As Long
     Dim i As Long
+    For i = 0 To UBound(orderedCols)
+        wsResults.Cells(1, i + 1).value = orderedCols(i)
+    Next i
     Dim lastHeaderCol As Long
-    
-    ' Write header - new order: IsMatch, Difference, ID, Sheet1 Total, Sheet2 Total, then additional columns
-    col = 1
-    wsResults.Cells(1, col).value = "IsMatch": col = col + 1
-    wsResults.Cells(1, col).value = "Difference": col = col + 1
-    wsResults.Cells(1, col).value = "ID": col = col + 1
-    wsResults.Cells(1, col).value = "Sheet1 Total": col = col + 1
-    wsResults.Cells(1, col).value = "Sheet2 Total": col = col + 1
-    
-    ' Add additional column headers
-    If hasAdditionalCols Then
-        For i = 0 To UBound(additionalColNames)
-            wsResults.Cells(1, col).value = additionalColNames(i)
-            col = col + 1
-        Next i
-    End If
-    
-    lastHeaderCol = col - 1
+    lastHeaderCol = UBound(orderedCols) + 1
     FormatHeaderRow wsResults, lastHeaderCol
     WriteResultsHeader = lastHeaderCol
 End Function
@@ -830,62 +880,61 @@ Private Function BuildResultsRowData(allIDs As Collection, sheet1Totals As Objec
     Set BuildResultsRowData = rowData
 End Function
 
-Private Function WriteResultsDataRows(wsResults As Worksheet, rowData As Collection, _
-                                      additionalColNames() As String, hasAdditionalCols As Boolean) As Long
-    ' Write sorted data rows
-    Dim row As Long, col As Long
+Private Function WriteResultsDataRows(wsResults As Worksheet, rowData As Collection, orderedCols() As String) As Long
+    Dim row As Long
     Dim i As Long, j As Long
     Dim rowDict As Object
-    
+    Dim colName As String
+
     row = 2
     For i = 1 To rowData.Count
         Set rowDict = rowData(i)
-        
-        ' Write to sheet from row dictionary
-        col = 1
-        wsResults.Cells(row, col).value = rowDict("IsMatch"): col = col + 1
-        wsResults.Cells(row, col).value = rowDict("Difference"): col = col + 1
-        wsResults.Cells(row, col).value = rowDict("ID"): col = col + 1
-        wsResults.Cells(row, col).value = rowDict("Sheet1 Total"): col = col + 1
-        wsResults.Cells(row, col).value = rowDict("Sheet2 Total"): col = col + 1
-        
-        ' Write additional columns
-        If hasAdditionalCols Then
-            For j = 0 To UBound(additionalColNames)
-                wsResults.Cells(row, col).value = rowDict(additionalColNames(j))
-                col = col + 1
-            Next j
-        End If
-        
+
+        For j = 0 To UBound(orderedCols)
+            colName = orderedCols(j)
+            If colName = "IsMatch" Then
+                wsResults.Cells(row, j + 1).value = CBool(rowDict("IsMatch"))
+            ElseIf rowDict.Exists(colName) Then
+                wsResults.Cells(row, j + 1).value = rowDict(colName)
+            Else
+                wsResults.Cells(row, j + 1).value = ""
+            End If
+        Next j
+
         ' Highlight non-matches
         If Not rowDict("IsMatch") Then
             wsResults.Rows(row).Interior.Color = RGB(255, 200, 200)
         End If
-        
+
         row = row + 1
     Next i
-    
-    WriteResultsDataRows = row - 1  ' Return last row number
+
+    WriteResultsDataRows = row - 1
 End Function
 
-Private Sub CreateAndFormatResultsTable(wsResults As Worksheet, lastRow As Long, lastHeaderCol As Long)
+Private Sub CreateAndFormatResultsTable(wsResults As Worksheet, lastRow As Long, lastHeaderCol As Long, orderedCols() As String)
     Dim tableRange As Range
-    
-    ' Format number columns (Difference, Sheet1 Total, Sheet2 Total - skip ID in column 3)
+    Dim i As Long
+    Dim numericCol As Variant
+
+    ' Apply number format to numeric columns at their actual positions
     If lastRow >= 2 Then
-        ' Column 2: Difference
-        wsResults.Range(wsResults.Cells(2, 2), wsResults.Cells(lastRow, 2)).NumberFormat = "#,##0.00"
-        ' Columns 4-5: Sheet1 Total, Sheet2 Total
-        wsResults.Range(wsResults.Cells(2, 4), wsResults.Cells(lastRow, 5)).NumberFormat = "#,##0.00"
+        For Each numericCol In Array("Difference", "Sheet1 Total", "Sheet2 Total")
+            For i = 0 To UBound(orderedCols)
+                If orderedCols(i) = numericCol Then
+                    wsResults.Range(wsResults.Cells(2, i + 1), wsResults.Cells(lastRow, i + 1)).NumberFormat = "#,##0.00"
+                    Exit For
+                End If
+            Next i
+        Next numericCol
     End If
-    
+
     ' Convert to Table
     If lastRow >= 2 Then
         Set tableRange = wsResults.Range(wsResults.Cells(1, 1), wsResults.Cells(lastRow, lastHeaderCol))
-        
         RecreateListObject wsResults, tableRange, "ReconResultsTable", "TableStyleMedium2"
     End If
-    
+
     ' Auto-fit columns
     wsResults.Columns("A:" & ColLetter(lastHeaderCol)).AutoFit
 End Sub
@@ -1714,7 +1763,8 @@ Private Sub SplitResults(wsAllResults As Worksheet, ws1 As Worksheet, ws2 As Wor
                          additionalColumns1 As String, additionalColumns2 As String, _
                          Optional resultPrefix As String = "", _
                          Optional ByRef matchCount As Long = 0, _
-                         Optional ByRef errorCount As Long = 0)
+                         Optional ByRef errorCount As Long = 0, _
+                         Optional columnOrder As String = "")
     ' Check if ReconResultsTable exists
     Dim tblAll As ListObject
     On Error Resume Next
@@ -1724,16 +1774,16 @@ Private Sub SplitResults(wsAllResults As Worksheet, ws1 As Worksheet, ws2 As Wor
     If tblAll Is Nothing Then Exit Sub
     If tblAll.ListRows.Count = 0 Then Exit Sub
     
-    ' Find column indexes in All Results
+    ' Find column indexes in All Results by header name (positions vary with Column Order config)
     Dim isMatchCol As Long, diffCol As Long, idCol As Long
     Dim sheet1TotalCol As Long, sheet2TotalCol As Long
     Dim lastCol As Long
-    
-    isMatchCol = 1  ' Column A
-    diffCol = 2     ' Column B
-    idCol = 3       ' Column C
-    sheet1TotalCol = 4  ' Column D
-    sheet2TotalCol = 5  ' Column E
+
+    isMatchCol     = FindColumnIndex(wsAllResults, "IsMatch")
+    diffCol        = FindColumnIndex(wsAllResults, "Difference")
+    idCol          = FindColumnIndex(wsAllResults, "ID")
+    sheet1TotalCol = FindColumnIndex(wsAllResults, "Sheet1 Total")
+    sheet2TotalCol = FindColumnIndex(wsAllResults, "Sheet2 Total")
     lastCol = wsAllResults.Cells(1, wsAllResults.Columns.Count).End(xlToLeft).Column
     
     ' Get Match Results and Error Results worksheets
@@ -1749,17 +1799,17 @@ Private Sub SplitResults(wsAllResults As Worksheet, ws1 As Worksheet, ws2 As Wor
         ' Detail expansion mode for Match Results
         WriteDetailMatchResults wsMatch, wsAllResults, ws1, ws2, idCol1, idCol2, detailSheet, _
                                 detailRows, sheet1Totals, sheet2Totals, sheet1Additional, sheet2Additional, _
-                                additionalColumns1, additionalColumns2, idCol, sheet1TotalCol, sheet2TotalCol, matchCount
+                                additionalColumns1, additionalColumns2, isMatchCol, idCol, sheet1TotalCol, sheet2TotalCol, matchCount, columnOrder
     Else
         ' Aggregated mode for Match Results (current behavior)
-        WriteAggregatedMatchResults wsMatch, wsAllResults, idCol, lastCol, matchCount
+        WriteAggregatedMatchResults wsMatch, wsAllResults, isMatchCol, idCol, lastCol, matchCount
     End If
-    
+
     ' Error Results: always aggregated (keep current behavior)
-    WriteErrorResults wsError, wsAllResults, idCol, diffCol, lastCol, errorCount
+    WriteErrorResults wsError, wsAllResults, isMatchCol, idCol, diffCol, lastCol, errorCount
 End Sub
 
-Private Sub WriteAggregatedMatchResults(wsMatch As Worksheet, wsAllResults As Worksheet, idCol As Long, lastCol As Long, ByRef matchCount As Long)
+Private Sub WriteAggregatedMatchResults(wsMatch As Worksheet, wsAllResults As Worksheet, isMatchCol As Long, idCol As Long, lastCol As Long, ByRef matchCount As Long)
     Dim tblAll As ListObject
     Dim col As Long
     Dim matchCol As Long
@@ -1785,7 +1835,7 @@ Private Sub WriteAggregatedMatchResults(wsMatch As Worksheet, wsAllResults As Wo
     matchCount = 0
     
     For row = 2 To tblAll.Range.Rows.Count
-        isMatchValue = wsAllResults.Cells(row, 1).Value ' IsMatch column
+        isMatchValue = wsAllResults.Cells(row, isMatchCol).Value
         If IsRowMatch(isMatchValue) Then
             ' Copy to Match Results (skip IsMatch and Difference columns)
             matchCol = 1
@@ -1822,14 +1872,15 @@ Private Sub WriteDetailMatchResults(wsMatch As Worksheet, wsAllResults As Worksh
                                      detailRows As Object, sheet1Totals As Object, sheet2Totals As Object, _
                                      sheet1Additional As Object, sheet2Additional As Object, _
                                      additionalColumns1 As String, additionalColumns2 As String, _
-                                     idCol As Long, sheet1TotalCol As Long, sheet2TotalCol As Long, _
-                                     ByRef matchCount As Long)
-    ' Detail expansion mode: Output detail rows for matched IDs
+                                     isMatchCol As Long, idCol As Long, sheet1TotalCol As Long, sheet2TotalCol As Long, _
+                                     ByRef matchCount As Long, Optional columnOrder As String = "")
     Dim tblAll As ListObject
     Dim additionalCols1() As String
     Dim additionalCols2() As String
     Dim hasAdditional1 As Boolean
     Dim hasAdditional2 As Boolean
+    Dim defaultMatchCols() As String
+    Dim orderedMatchCols() As String
     Dim lastHeaderCol As Long
     Dim row As Long
     Dim matchRow As Long
@@ -1837,44 +1888,79 @@ Private Sub WriteDetailMatchResults(wsMatch As Worksheet, wsAllResults As Worksh
     Dim total1 As Double
     Dim total2 As Double
     Dim isMatchValue As Variant
-    
+
     Set tblAll = wsAllResults.ListObjects("ReconResultsTable")
-    
-    ' Parse and prepare additional columns
+
     ParseAdditionalColumns additionalColumns1, additionalColumns2, additionalCols1, additionalCols2, hasAdditional1, hasAdditional2
-    
-    ' Build and format header
-    lastHeaderCol = WriteDetailMatchHeader(wsMatch, detailSheet, additionalCols1, additionalCols2, hasAdditional1, hasAdditional2)
-    
-    ' Write detail rows for matched IDs
+
+    ' Build column order for Match Results
+    defaultMatchCols = BuildDetailMatchColumnList(detailSheet, additionalCols1, additionalCols2, hasAdditional1, hasAdditional2)
+    orderedMatchCols = ReorderColumns(defaultMatchCols, columnOrder)
+
+    lastHeaderCol = WriteDetailMatchHeader(wsMatch, orderedMatchCols)
+
     matchRow = 2
     matchCount = 0
     For row = 2 To tblAll.Range.Rows.Count
-        isMatchValue = wsAllResults.Cells(row, 1).Value
+        isMatchValue = wsAllResults.Cells(row, isMatchCol).Value
         If IsRowMatch(isMatchValue) Then
             id = CStr(wsAllResults.Cells(row, idCol).value)
             total1 = wsAllResults.Cells(row, sheet1TotalCol).value
             total2 = wsAllResults.Cells(row, sheet2TotalCol).value
             matchCount = matchCount + 1
-            
             ProcessMatchedDetailRows wsMatch, matchRow, id, total1, total2, detailSheet, _
-                                    detailRows, sheet1Additional, sheet2Additional, _
-                                    additionalCols1, additionalCols2, hasAdditional1, hasAdditional2
+                                     detailRows, sheet1Additional, sheet2Additional, orderedMatchCols
         End If
     Next row
-    
-    ' Create and format table
+
     If matchRow > 2 Then
-        FormatDetailMatchTable wsMatch, matchRow, lastHeaderCol, detailSheet, additionalCols1, additionalCols2, hasAdditional1, hasAdditional2
+        FormatDetailMatchTable wsMatch, matchRow, lastHeaderCol, orderedMatchCols
     End If
 End Sub
+
+' Builds the default (unordered) column list for detail mode Match Results.
+Private Function BuildDetailMatchColumnList(detailSheet As String, additionalCols1() As String, additionalCols2() As String, hasAdditional1 As Boolean, hasAdditional2 As Boolean) As String()
+    Dim totalCols As Long
+    Dim i As Long, idx As Long
+    totalCols = 3  ' ID + Sheet1 Total + Sheet2 Total
+    If detailSheet = "SHEET1" Then
+        If hasAdditional1 Then totalCols = totalCols + UBound(additionalCols1) + 1
+        If hasAdditional2 Then totalCols = totalCols + UBound(additionalCols2) + 1
+    ElseIf detailSheet = "SHEET2" Then
+        If hasAdditional2 Then totalCols = totalCols + UBound(additionalCols2) + 1
+        If hasAdditional1 Then totalCols = totalCols + UBound(additionalCols1) + 1
+    End If
+
+    Dim cols() As String
+    ReDim cols(0 To totalCols - 1)
+    idx = 0
+    cols(idx) = "ID": idx = idx + 1
+
+    ' Detail sheet additional columns
+    If detailSheet = "SHEET1" And hasAdditional1 Then
+        For i = 0 To UBound(additionalCols1): cols(idx) = additionalCols1(i): idx = idx + 1: Next i
+    ElseIf detailSheet = "SHEET2" And hasAdditional2 Then
+        For i = 0 To UBound(additionalCols2): cols(idx) = additionalCols2(i): idx = idx + 1: Next i
+    End If
+
+    cols(idx) = "Sheet1 Total": idx = idx + 1
+    cols(idx) = "Sheet2 Total": idx = idx + 1
+
+    ' Summary sheet additional columns
+    If detailSheet = "SHEET1" And hasAdditional2 Then
+        For i = 0 To UBound(additionalCols2): cols(idx) = additionalCols2(i): idx = idx + 1: Next i
+    ElseIf detailSheet = "SHEET2" And hasAdditional1 Then
+        For i = 0 To UBound(additionalCols1): cols(idx) = additionalCols1(i): idx = idx + 1: Next i
+    End If
+
+    BuildDetailMatchColumnList = cols
+End Function
 
 Private Sub ProcessMatchedDetailRows(wsMatch As Worksheet, ByRef matchRow As Long, _
                                      id As String, total1 As Double, total2 As Double, _
                                      detailSheet As String, allDetailRows As Object, _
                                      sheet1Additional As Object, sheet2Additional As Object, _
-                                     additionalCols1() As String, additionalCols2() As String, _
-                                     hasAdditional1 As Boolean, hasAdditional2 As Boolean)
+                                     orderedCols() As String)
     Dim detailRows As Collection
     Dim detailRow As Object
     Dim summaryDict As Object
@@ -1883,11 +1969,9 @@ Private Sub ProcessMatchedDetailRows(wsMatch As Worksheet, ByRef matchRow As Lon
     
     Set detailRows = allDetailRows(id)
     Set summaryDict = GetSummaryDict(detailSheet, id, sheet1Additional, sheet2Additional)
-    
+
     For Each detailRow In detailRows
-        WriteDetailMatchRow wsMatch, matchRow, id, detailRow, summaryDict, _
-                           detailSheet, additionalCols1, additionalCols2, _
-                           hasAdditional1, hasAdditional2, total1, total2
+        WriteDetailMatchRow wsMatch, matchRow, id, detailRow, summaryDict, orderedCols, total1, total2
         matchRow = matchRow + 1
     Next detailRow
 End Sub
@@ -1901,47 +1985,15 @@ Private Sub ParseAdditionalColumns(additionalColumns1 As String, additionalColum
     If hasAdditional2 Then additionalCols2 = SplitTrimCSV(additionalColumns2)
 End Sub
 
-Private Function WriteDetailMatchHeader(wsMatch As Worksheet, detailSheet As String, _
-                                        additionalCols1() As String, additionalCols2() As String, _
-                                        hasAdditional1 As Boolean, hasAdditional2 As Boolean) As Long
-    Dim col As Long
+Private Function WriteDetailMatchHeader(wsMatch As Worksheet, orderedCols() As String) As Long
     Dim i As Long
-    
-    col = 1
-    wsMatch.Cells(1, col).value = "ID": col = col + 1
-    
-    ' Add detail sheet's additional columns first
-    If detailSheet = "SHEET1" And hasAdditional1 Then
-        For i = 0 To UBound(additionalCols1)
-            wsMatch.Cells(1, col).value = additionalCols1(i)
-            col = col + 1
-        Next i
-    ElseIf detailSheet = "SHEET2" And hasAdditional2 Then
-        For i = 0 To UBound(additionalCols2)
-            wsMatch.Cells(1, col).value = additionalCols2(i)
-            col = col + 1
-        Next i
-    End If
-    
-    ' Add totals
-    wsMatch.Cells(1, col).value = "Sheet1 Total": col = col + 1
-    wsMatch.Cells(1, col).value = "Sheet2 Total": col = col + 1
-    
-    ' Add summary sheet's additional columns
-    If detailSheet = "SHEET1" And hasAdditional2 Then
-        For i = 0 To UBound(additionalCols2)
-            wsMatch.Cells(1, col).value = additionalCols2(i)
-            col = col + 1
-        Next i
-    ElseIf detailSheet = "SHEET2" And hasAdditional1 Then
-        For i = 0 To UBound(additionalCols1)
-            wsMatch.Cells(1, col).value = additionalCols1(i)
-            col = col + 1
-        Next i
-    End If
-    
-    WriteDetailMatchHeader = col - 1
-    FormatHeaderRow wsMatch, WriteDetailMatchHeader
+    For i = 0 To UBound(orderedCols)
+        wsMatch.Cells(1, i + 1).value = orderedCols(i)
+    Next i
+    Dim lastHeaderCol As Long
+    lastHeaderCol = UBound(orderedCols) + 1
+    FormatHeaderRow wsMatch, lastHeaderCol
+    WriteDetailMatchHeader = lastHeaderCol
 End Function
 
 Private Function GetSummaryDict(detailSheet As String, id As String, _
@@ -1957,82 +2009,52 @@ End Function
 
 Private Sub WriteDetailMatchRow(wsMatch As Worksheet, matchRow As Long, id As String, _
                                detailRow As Object, summaryDict As Object, _
-                               detailSheet As String, additionalCols1() As String, additionalCols2() As String, _
-                               hasAdditional1 As Boolean, hasAdditional2 As Boolean, _
-                               total1 As Double, total2 As Double)
-    Dim col As Long
-    Dim i As Long
-    
-    col = 1
-    wsMatch.Cells(matchRow, col).value = id: col = col + 1
-    
-    ' Write detail columns
-    If detailSheet = "SHEET1" And hasAdditional1 Then
-        For i = 0 To UBound(additionalCols1)
-            If detailRow.Exists(additionalCols1(i)) Then
-                wsMatch.Cells(matchRow, col).value = detailRow(additionalCols1(i))
-            End If
-            col = col + 1
-        Next i
-    ElseIf detailSheet = "SHEET2" And hasAdditional2 Then
-        For i = 0 To UBound(additionalCols2)
-            If detailRow.Exists(additionalCols2(i)) Then
-                wsMatch.Cells(matchRow, col).value = detailRow(additionalCols2(i))
-            End If
-            col = col + 1
-        Next i
-    End If
-    
-    ' Write totals
-    wsMatch.Cells(matchRow, col).value = total1: col = col + 1
-    wsMatch.Cells(matchRow, col).value = total2: col = col + 1
-    
-    ' Write summary columns
-    If Not summaryDict Is Nothing Then
-        If detailSheet = "SHEET1" And hasAdditional2 Then
-            For i = 0 To UBound(additionalCols2)
-                If summaryDict.Exists(additionalCols2(i)) Then
-                    wsMatch.Cells(matchRow, col).value = summaryDict(additionalCols2(i))
+                               orderedCols() As String, total1 As Double, total2 As Double)
+    Dim j As Long
+    Dim colName As String
+    For j = 0 To UBound(orderedCols)
+        colName = orderedCols(j)
+        Select Case colName
+            Case "ID"
+                wsMatch.Cells(matchRow, j + 1).value = id
+            Case "Sheet1 Total"
+                wsMatch.Cells(matchRow, j + 1).value = total1
+            Case "Sheet2 Total"
+                wsMatch.Cells(matchRow, j + 1).value = total2
+            Case Else
+                If detailRow.Exists(colName) Then
+                    wsMatch.Cells(matchRow, j + 1).value = detailRow(colName)
+                ElseIf Not summaryDict Is Nothing Then
+                    If summaryDict.Exists(colName) Then
+                        wsMatch.Cells(matchRow, j + 1).value = summaryDict(colName)
+                    End If
                 End If
-                col = col + 1
-            Next i
-        ElseIf detailSheet = "SHEET2" And hasAdditional1 Then
-            For i = 0 To UBound(additionalCols1)
-                If summaryDict.Exists(additionalCols1(i)) Then
-                    wsMatch.Cells(matchRow, col).value = summaryDict(additionalCols1(i))
-                End If
-                col = col + 1
-            Next i
-        End If
-    End If
+        End Select
+    Next j
 End Sub
 
-Private Sub FormatDetailMatchTable(wsMatch As Worksheet, matchRow As Long, lastHeaderCol As Long, _
-                                   detailSheet As String, additionalCols1() As String, additionalCols2() As String, _
-                                   hasAdditional1 As Boolean, hasAdditional2 As Boolean)
+Private Sub FormatDetailMatchTable(wsMatch As Worksheet, matchRow As Long, lastHeaderCol As Long, orderedCols() As String)
     Dim matchTableRange As Range
-    Dim totalCol1 As Long
-    Dim totalCol2 As Long
-    
+    Dim i As Long
+    Dim numericCol As Variant
+
     Set matchTableRange = wsMatch.Range(wsMatch.Cells(1, 1), wsMatch.Cells(matchRow - 1, lastHeaderCol))
-    
     RecreateListObject wsMatch, matchTableRange, "MatchResultsTable", "TableStyleMedium3"
-    
-    ' Format number columns (totals)
-    If detailSheet = "SHEET1" And hasAdditional1 Then
-        totalCol1 = 2 + UBound(additionalCols1) + 1
-    ElseIf detailSheet = "SHEET2" And hasAdditional2 Then
-        totalCol1 = 2 + UBound(additionalCols2) + 1
-    Else
-        totalCol1 = 2
-    End If
-    totalCol2 = totalCol1 + 1
-    
-    wsMatch.Range(wsMatch.Cells(2, totalCol1), wsMatch.Cells(matchRow - 1, totalCol2)).NumberFormat = "#,##0.00"
+
+    ' Format Sheet1/Sheet2 Total columns at their actual positions
+    For Each numericCol In Array("Sheet1 Total", "Sheet2 Total")
+        For i = 0 To UBound(orderedCols)
+            If orderedCols(i) = numericCol Then
+                wsMatch.Range(wsMatch.Cells(2, i + 1), wsMatch.Cells(matchRow - 1, i + 1)).NumberFormat = "#,##0.00"
+                Exit For
+            End If
+        Next i
+    Next numericCol
+
     wsMatch.Columns("A:" & ColLetter(lastHeaderCol)).AutoFit
 End Sub
 
-Private Sub WriteErrorResults(wsError As Worksheet, wsAllResults As Worksheet, idCol As Long, diffCol As Long, lastCol As Long, ByRef errorCount As Long)
+Private Sub WriteErrorResults(wsError As Worksheet, wsAllResults As Worksheet, isMatchCol As Long, idCol As Long, diffCol As Long, lastCol As Long, ByRef errorCount As Long)
     ' Error Results: always aggregated
     Dim tblAll As ListObject
     Dim col As Long, errorCol As Long
@@ -2056,7 +2078,7 @@ Private Sub WriteErrorResults(wsError As Worksheet, wsAllResults As Worksheet, i
     errorCount = 0
     
     For row = 2 To tblAll.Range.Rows.Count
-        isMatch = wsAllResults.Cells(row, 1).value ' IsMatch column
+        isMatch = wsAllResults.Cells(row, isMatchCol).value
         
         If Not isMatch Then
             ' Copy to Error Results (skip IsMatch, keep Difference)
