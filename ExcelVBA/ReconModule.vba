@@ -343,7 +343,7 @@ Private Function WarnIfRepeatingIDs(ws As Worksheet, idColName As String, sheetL
     ans = MsgBox(sheetLabel & " contains repeating IDs (e.g. '" & repeatID & "') but 'Detail Sheet' is not set in config." & vbNewLine & vbNewLine & _
                  "The reconciliation will sum all " & sheetLabel & " rows per ID, but Additional Column values will" & vbNewLine & _
                  "reflect only the first matching row. Set 'Detail Sheet = " & sheetLabel & "' to get per-row detail." & vbNewLine & vbNewLine & _
-                 "Continue anyway?", vbExclamation Or vbYesNo, "Possible Misconfiguration")
+                 "Continue anyway?", vbExclamation Or vbYesNo Or vbDefaultButton2, "Possible Misconfiguration")
     WarnIfRepeatingIDs = (ans = vbYes)
 End Function
 
