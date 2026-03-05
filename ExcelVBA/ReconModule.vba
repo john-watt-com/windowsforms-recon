@@ -323,28 +323,28 @@ Private Function ValidateSetup(reconConfigSheetName As String, workflowName As S
     
     ' Warn if a sheet has repeating IDs but Detail Sheet is not configured
     If Len(detailSheet) = 0 Then
-        Dim repeatID As String
-        repeatID = FindFirstRepeatingID(ws1, idCol1)
-        If Len(repeatID) > 0 Then
-            Dim ans1 As VbMsgBoxResult
-            ans1 = MsgBox("Sheet1 contains repeating IDs (e.g. '" & repeatID & "') but 'Detail Sheet' is not set in config." & vbNewLine & vbNewLine & _
-                          "The reconciliation will sum all Sheet1 rows per ID, but Additional Column values will" & vbNewLine & _
-                          "reflect only the first matching row. Set 'Detail Sheet = Sheet1' to get per-row detail." & vbNewLine & vbNewLine & _
-                          "Continue anyway?", vbExclamation Or vbYesNo, "Possible Misconfiguration")
-            If ans1 = vbNo Then Exit Function
-        End If
-        repeatID = FindFirstRepeatingID(ws2, idCol2)
-        If Len(repeatID) > 0 Then
-            Dim ans2 As VbMsgBoxResult
-            ans2 = MsgBox("Sheet2 contains repeating IDs (e.g. '" & repeatID & "') but 'Detail Sheet' is not set in config." & vbNewLine & vbNewLine & _
-                          "The reconciliation will sum all Sheet2 rows per ID, but Additional Column values will" & vbNewLine & _
-                          "reflect only the first matching row. Set 'Detail Sheet = Sheet2' to get per-row detail." & vbNewLine & vbNewLine & _
-                          "Continue anyway?", vbExclamation Or vbYesNo, "Possible Misconfiguration")
-            If ans2 = vbNo Then Exit Function
-        End If
+        If Not WarnIfRepeatingIDs(ws1, idCol1, "Sheet1") Then Exit Function
+        If Not WarnIfRepeatingIDs(ws2, idCol2, "Sheet2") Then Exit Function
     End If
     
     ValidateSetup = True
+End Function
+
+' Returns False if the sheet has repeating IDs and the user chose not to continue.
+Private Function WarnIfRepeatingIDs(ws As Worksheet, idColName As String, sheetLabel As String) As Boolean
+    Dim repeatID As String
+    repeatID = FindFirstRepeatingID(ws, idColName)
+    If Len(repeatID) = 0 Then
+        WarnIfRepeatingIDs = True
+        Exit Function
+    End If
+    
+    Dim ans As VbMsgBoxResult
+    ans = MsgBox(sheetLabel & " contains repeating IDs (e.g. '" & repeatID & "') but 'Detail Sheet' is not set in config." & vbNewLine & vbNewLine & _
+                 "The reconciliation will sum all " & sheetLabel & " rows per ID, but Additional Column values will" & vbNewLine & _
+                 "reflect only the first matching row. Set 'Detail Sheet = " & sheetLabel & "' to get per-row detail." & vbNewLine & vbNewLine & _
+                 "Continue anyway?", vbExclamation Or vbYesNo, "Possible Misconfiguration")
+    WarnIfRepeatingIDs = (ans = vbYes)
 End Function
 
 ' Returns the first ID that appears more than once in the given column, or "" if all IDs are unique.
