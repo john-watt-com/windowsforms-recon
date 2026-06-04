@@ -1264,6 +1264,8 @@ Private Sub OfferSaveTransformResult(ws As Worksheet)
     Dim fileName As String
     Dim defaultPath As String
     Dim sheetName As String
+    Dim fileExt As String
+    Dim fileFormat As XlFileFormat
 
     response = MsgBox("Save '" & ws.Name & "' to a new file?", vbYesNo + vbQuestion, "Save Upload Result")
     If response <> vbYes Then Exit Sub
@@ -1274,20 +1276,37 @@ Private Sub OfferSaveTransformResult(ws As Worksheet)
     If Len(defaultPath) > 0 Then defaultPath = defaultPath & "\"
 
     filePath = Application.GetSaveAsFilename( _
-        InitialFileName:=defaultPath & sheetName & "_" & Format(Now, "yyyy-mm-dd_hhnn") & ".xls", _
-        FileFilter:="Excel 97-2003 Workbook (*.xls), *.xls", _
-        Title:="Save " & sheetName & " as Excel 97-2003 Workbook")
+        InitialFileName:=defaultPath & sheetName & "_" & Format(Now, "yyyy-mm-dd_hhnn") & ".xlsx", _
+        FileFilter:="Excel Workbook (*.xlsx), *.xlsx," & _
+                    "Excel 97-2003 Workbook (*.xls), *.xls," & _
+                    "Excel Macro-Enabled Workbook (*.xlsm), *.xlsm," & _
+                    "Excel Binary Workbook (*.xlsb), *.xlsb," & _
+                    "All Files (*.*), *.*", _
+        FilterIndex:=1, _
+        Title:="Save " & sheetName)
 
     If filePath = False Then Exit Sub
 
-    ' Ensure .xls extension
-    If LCase(Right(filePath, 4)) <> ".xls" Then filePath = filePath & ".xls"
+    ' Default to .xlsx if no extension is provided
+    If InStrRev(CStr(filePath), ".") = 0 Then filePath = CStr(filePath) & ".xlsx"
+
+    fileExt = LCase(Mid(CStr(filePath), InStrRev(CStr(filePath), ".") + 1))
+    Select Case fileExt
+        Case "xls"
+            fileFormat = xlExcel8
+        Case "xlsm"
+            fileFormat = xlOpenXMLWorkbookMacroEnabled
+        Case "xlsb"
+            fileFormat = xlExcel12
+        Case Else
+            fileFormat = xlOpenXMLWorkbook
+    End Select
 
     On Error GoTo SaveResultError
 
     ws.Copy
     Set wb = ActiveWorkbook
-    wb.SaveAs fileName:=filePath, FileFormat:=xlExcel8
+    wb.SaveAs fileName:=CStr(filePath), FileFormat:=fileFormat
     wb.Close SaveChanges:=False
 
     fileName = Mid(filePath, InStrRev(filePath, "\") + 1)
