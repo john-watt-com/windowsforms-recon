@@ -1,0 +1,7 @@
+Workflow,Setting,Value
+Cust Load,Sheet1 ID Column,TradeID
+Cust Load,Sheet2 ID Column,TradeID
+Cust Load,Sheet1 Value Columns,TotalNet
+Cust Load,Sheet2 Value Columns,NetAmount
+Cust Load,Sheet2 Additional Columns,"TradeDate,Counterparty"
+Cust Load,Tolerance,0.01
