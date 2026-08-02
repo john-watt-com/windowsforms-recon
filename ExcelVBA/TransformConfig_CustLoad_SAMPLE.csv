@@ -1,0 +1,15 @@
+--- TABLE 1: TransformSettingsTable (Workflow / Setting / Value) ---
+Workflow,Setting,Value
+Cust Load,Name,Cust Load Report
+Cust Load,Source Sheet,All Results
+Cust Load,Target Sheet,Cust Load Report
+
+--- TABLE 2: TransformColumnsTable (Workflow / Order / Target Column / Type / Source) ---
+Workflow,Order,Target Column,Type,Source
+Cust Load,1,IsMatch,Existing,IsMatch
+Cust Load,2,Difference,Existing,Difference
+Cust Load,3,TradeID,Existing,TradeID
+Cust Load,4,Sheet1 Total,Existing,Sheet1 Total
+Cust Load,5,Sheet2 Total,Existing,Sheet2 Total
+Cust Load,6,TradeDate,Existing,TradeDate
+Cust Load,7,Counterparty,Existing,Counterparty

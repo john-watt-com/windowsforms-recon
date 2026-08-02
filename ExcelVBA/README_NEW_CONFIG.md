@@ -13,11 +13,11 @@
 
 ## Recon Config (ReconConfigTable)
 - Stores all settings for each workflow.
-- Columns: WorkflowName, Setting, Value
+- Columns: Workflow, Setting, Value
 - Always include: Sheet1 ID Column, Sheet2 ID Column, Sheet1 Value Columns, Sheet2 Value Columns
 - Add Sheet1 Filter and/or Sheet2 Filter as needed for filtering.
 
-| WorkflowName            | Setting                | Value                                   |
+| Workflow                | Setting                | Value                                   |
 |-------------------------|------------------------|-----------------------------------------|
 | GL Monthly              | Sheet1 ID Column       | ID                                      |
 | GL Monthly              | Sheet2 ID Column       | ID                                      |

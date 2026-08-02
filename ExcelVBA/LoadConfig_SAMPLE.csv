@@ -1,0 +1,4 @@
+WorkflowName,Sheet,Setting,Value
+Cust Load,Sheet2,DefaultFolder,C:\Users\johnw\OneDrive\Documents\repos\VBA\windowsforms-recon\ExcelVBA
+Cust Load,Sheet2,TableLeftHeaderIndex,A4
+Cust Load,Sheet2,TableRightHeaderIndex,F4

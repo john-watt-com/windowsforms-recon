@@ -1102,72 +1102,13 @@ Private Function CompareRows(row1 As Object, row2 As Object, sortColumns() As St
     CompareRows = 0
 End Function
 
-' Helper: Import external Excel file into a worksheet
+' Helper: Import external Excel file(s) into a worksheet.
+' If Load Config exists for the active workflow + sheet, uses bounded extraction (SheetName + cell refs).
+' Otherwise falls back to raw copy. Always uses multi-select file picker.
 Public Sub ImportExcelFile(targetSheet As Worksheet)
-    Dim fd As FileDialog
-    Dim filePath As String
-    Dim wb As Workbook
-    Dim rowCount As Long
-    Dim fileName As String
-    Dim pos As Long
-    Dim details As String
-    
-    Set fd = Application.FileDialog(msoFileDialogFilePicker)
-    
-    fd.Title = "Select Excel or CSV File to Import"
-    fd.Filters.Clear
-    fd.Filters.Add "Excel and CSV Files", "*.xlsx;*.xls;*.xlsm;*.csv"
-    fd.Filters.Add "Excel Files", "*.xlsx;*.xls;*.xlsm"
-    fd.Filters.Add "CSV Files", "*.csv"
-    
-    If fd.Show = -1 Then
-        filePath = fd.SelectedItems(1)
-        
-        On Error GoTo ImportError
-        
-        ' Clear target sheet
-        targetSheet.Cells.Clear
-        
-        ' Open file and copy data
-        Set wb = Workbooks.Open(filePath, ReadOnly:=True)
-        
-        ' Copy first worksheet
-        wb.Worksheets(1).UsedRange.Copy targetSheet.Range("A1")
-        
-        wb.Close False
-        
-        ' Count rows imported (excluding header)
-        rowCount = targetSheet.Cells(targetSheet.Rows.Count, 1).End(xlUp).row - 1
-        
-        ' Extract filename from path
-        pos = InStrRev(filePath, "\")
-        If pos > 0 Then
-            fileName = Mid(filePath, pos + 1)
-        Else
-            fileName = filePath
-        End If
-        
-        ' Log the import
-        details = "File: " & fileName & " | Target: " & targetSheet.Name
-        LogActivity "Import", "", details, "Success", rowCount
-        
-        ' Update form textbox to show loaded file (with full path as tooltip)
-        If targetSheet.Name = "Sheet1" Then
-            ReconForm.txtFile1.Text = fileName
-            ReconForm.txtFile1.ControlTipText = filePath
-        ElseIf targetSheet.Name = "Sheet2" Then
-            ReconForm.txtFile2.Text = fileName
-            ReconForm.txtFile2.ControlTipText = filePath
-        End If
-        
-        MsgBox "Successfully loaded data into " & targetSheet.Name, vbInformation, "Success"
-        Exit Sub
-        
-ImportError:
-        ' Log error
-        LogActivity "Import", "", "Error loading file: " & filePath & " - " & Err.Description, "Error", 0
-        MsgBox "Error loading file: " & Err.Description, vbCritical, "Error"
-    End If
+    Dim loadConfig As Object
+    Set loadConfig = ReadLoadConfig(targetSheet.Name)
+    ImportFilesWithPicker targetSheet, loadConfig
 End Sub
 
 ' Helper: Show the Recon Form
@@ -2379,5 +2320,377 @@ Private Function ApplyFilterFunction(funcName As String, value As Variant) As Va
     End Select
 End Function
 
+' ========================================
+' CUSTOM LOAD MODULE
+' ========================================
+
+' Read Load Config sheet for the given target sheet name (e.g. "Sheet1" or "Sheet2")
+' and the current ActiveWorkflow. Returns a Dictionary or Nothing if no config found.
+Private Function ReadLoadConfig(sheetTarget As String) As Object
+    Dim wsLC As Worksheet
+    Dim tbl As ListObject
+    Dim col As Long, row As Long
+    Dim wfColIdx As Long, sheetColIdx As Long, settingColIdx As Long, valueColIdx As Long
+    Dim config As Object
+    Dim wfUpper As String, sheetUpper As String
+    Dim found As Boolean
+
+    Set ReadLoadConfig = Nothing
+
+    On Error Resume Next
+    Set wsLC = ThisWorkbook.Worksheets("Load Config")
+    On Error GoTo 0
+    If wsLC Is Nothing Then Exit Function
+
+    On Error Resume Next
+    If wsLC.ListObjects.Count > 0 Then Set tbl = wsLC.ListObjects(1)
+    On Error GoTo 0
+    If tbl Is Nothing Then Exit Function
+
+    For col = 1 To tbl.ListColumns.Count
+        Select Case UCase(Trim(tbl.HeaderRowRange.Cells(1, col).Value))
+            Case "WORKFLOWNAME", "WORKFLOW NAME", "WORKFLOW": wfColIdx = col
+            Case "SHEET":   sheetColIdx   = col
+            Case "SETTING": settingColIdx = col
+            Case "VALUE":   valueColIdx   = col
+        End Select
+    Next col
+
+    If wfColIdx = 0 Or sheetColIdx = 0 Or settingColIdx = 0 Or valueColIdx = 0 Then Exit Function
+
+    Set config = CreateObject("Scripting.Dictionary")
+    wfUpper    = UCase(Trim(ActiveWorkflow))
+    sheetUpper = UCase(Trim(sheetTarget))
+    found = False
+
+    For row = 1 To tbl.ListRows.Count
+        If UCase(Trim(CStr(tbl.DataBodyRange.Cells(row, wfColIdx).Value))) = wfUpper And _
+           UCase(Trim(CStr(tbl.DataBodyRange.Cells(row, sheetColIdx).Value))) = sheetUpper Then
+
+            Dim settingKey As String, settingVal As String
+            settingKey = UCase(Trim(CStr(tbl.DataBodyRange.Cells(row, settingColIdx).Value)))
+            settingVal = Trim(CStr(tbl.DataBodyRange.Cells(row, valueColIdx).Value))
+
+            Select Case settingKey
+                Case "FILEPATTERN":           config("FilePattern")    = settingVal
+                Case "SHEETNAME":             config("SheetName")      = settingVal
+                Case "TABLELEFTHEADERINDEX":  config("LeftRef")        = settingVal
+                Case "TABLERIGHTHEADERINDEX": config("RightRef")       = settingVal
+                Case "DEFAULTFOLDER":         config("DefaultFolder")  = settingVal
+            End Select
+            found = True
+        End If
+    Next row
+
+    If found Then
+        If Not config.Exists("FilePattern")   Then config("FilePattern")   = ""
+        If Not config.Exists("SheetName")     Then config("SheetName")     = ""
+        If Not config.Exists("LeftRef")       Then config("LeftRef")       = ""
+        If Not config.Exists("RightRef")      Then config("RightRef")      = ""
+        If Not config.Exists("DefaultFolder") Then config("DefaultFolder") = ""
+        Set ReadLoadConfig = config
+    End If
+End Function
+
+' Folder picker — scans for files matching FilePattern and loads them all
+Private Sub ImportFilesFromFolder(targetSheet As Worksheet, loadConfig As Object)
+    Dim fd As FileDialog
+    Dim folderPath As String
+    Dim filePattern As String
+    Dim matchedName As String
+    Dim filePaths() As String
+    Dim fileCount As Long
+
+    Set fd = Application.FileDialog(msoFileDialogFolderPicker)
+    fd.Title = "Select Folder Containing Files to Import"
+    If Len(loadConfig("DefaultFolder")) > 0 Then
+        fd.InitialFileName = loadConfig("DefaultFolder")
+    ElseIf Len(ThisWorkbook.Path) > 0 Then
+        fd.InitialFileName = ThisWorkbook.Path
+    End If
+    If fd.Show <> -1 Then Exit Sub
+
+    folderPath = fd.SelectedItems(1)
+    If Right(folderPath, 1) <> "\" Then folderPath = folderPath & "\"
+
+    filePattern = loadConfig("FilePattern")
+    fileCount = 0
+    matchedName = Dir(folderPath & filePattern)
+    Do While Len(matchedName) > 0
+        fileCount = fileCount + 1
+        ReDim Preserve filePaths(1 To fileCount)
+        filePaths(fileCount) = folderPath & matchedName
+        matchedName = Dir()
+    Loop
+
+    If fileCount = 0 Then
+        MsgBox "No files matching '" & filePattern & "' found in:" & vbCrLf & folderPath, vbExclamation, "No Files Found"
+        Exit Sub
+    End If
+
+    LoadAndWriteFiles targetSheet, filePaths, loadConfig
+End Sub
+
+' Multi-select file picker — supports bounded or raw load depending on loadConfig
+Private Sub ImportFilesWithPicker(targetSheet As Worksheet, loadConfig As Object)
+    Dim fd As FileDialog
+    Dim filePaths() As String
+    Dim i As Long
+
+    Set fd = Application.FileDialog(msoFileDialogFilePicker)
+    fd.Title = "Select Excel or CSV File(s) to Import"
+    fd.AllowMultiSelect = True
+    If Not loadConfig Is Nothing Then
+        If Len(loadConfig("DefaultFolder")) > 0 Then
+            fd.InitialFileName = loadConfig("DefaultFolder") & "\"
+        ElseIf Len(ThisWorkbook.Path) > 0 Then
+            fd.InitialFileName = ThisWorkbook.Path & "\"
+        End If
+    ElseIf Len(ThisWorkbook.Path) > 0 Then
+        fd.InitialFileName = ThisWorkbook.Path & "\"
+    End If
+    fd.Filters.Clear
+    fd.Filters.Add "Excel and CSV Files", "*.xlsx;*.xls;*.xlsm;*.csv"
+    fd.Filters.Add "Excel Files", "*.xlsx;*.xls;*.xlsm"
+    fd.Filters.Add "CSV Files", "*.csv"
+    If fd.Show <> -1 Then Exit Sub
+
+    ReDim filePaths(1 To fd.SelectedItems.Count)
+    For i = 1 To fd.SelectedItems.Count
+        filePaths(i) = fd.SelectedItems(i)
+    Next i
+
+    LoadAndWriteFiles targetSheet, filePaths, loadConfig
+End Sub
+
+' Phase 1: accumulate all rows in memory; Phase 2: write only if all files succeed
+Private Sub LoadAndWriteFiles(targetSheet As Worksheet, filePaths() As String, loadConfig As Object)
+    Dim allRows As Collection
+    Dim headerCols As Variant
+    Dim i As Long
+    Dim fileCount As Long
+    Dim fileList As String
+    Dim shortName As String
+    Dim pos As Long
+
+    Set allRows = New Collection
+    fileCount = UBound(filePaths) - LBound(filePaths) + 1
+
+    ' Phase 1 — validate and collect every file; abort on any error
+    For i = LBound(filePaths) To UBound(filePaths)
+        If Not CollectFileData(filePaths(i), loadConfig, headerCols, allRows, (i = LBound(filePaths))) Then
+            Exit Sub  ' Error already shown; target sheet untouched
+        End If
+    Next i
+
+    ' Phase 2 — all files OK, write to target sheet
+    WriteCollectedData targetSheet, headerCols, allRows
+
+    ' Build file list string for logging
+    For i = LBound(filePaths) To UBound(filePaths)
+        pos = InStrRev(filePaths(i), "\")
+        fileList = fileList & IIf(Len(fileList) > 0, "; ", "") & Mid(filePaths(i), pos + 1)
+    Next i
+
+    LogActivity "Import", ActiveWorkflow, "Files(" & fileCount & "): " & fileList & " | Target: " & targetSheet.Name, "Success", allRows.Count
+
+    ' Update form labels
+    If fileCount = 1 Then
+        pos = InStrRev(filePaths(LBound(filePaths)), "\")
+        shortName = Mid(filePaths(LBound(filePaths)), pos + 1)
+    Else
+        shortName = fileCount & " files loaded"
+    End If
+
+    If targetSheet.Name = "Sheet1" Then
+        ReconForm.txtFile1.Text = shortName
+        ReconForm.txtFile1.ControlTipText = Join(filePaths, "; ")
+    ElseIf targetSheet.Name = "Sheet2" Then
+        ReconForm.txtFile2.Text = shortName
+        ReconForm.txtFile2.ControlTipText = Join(filePaths, "; ")
+    End If
+
+    MsgBox "Successfully loaded " & allRows.Count & " data row(s) into " & targetSheet.Name & " from " & fileCount & " file(s).", vbInformation, "Success"
+End Sub
+
+' Open one file, resolve its worksheet, and collect data into headerCols + allRows.
+' Returns False and shows an error if anything fails; target sheet is never touched.
+Private Function CollectFileData(filePath As String, loadConfig As Object, _
+                                  ByRef headerCols As Variant, allRows As Collection, _
+                                  isFirstFile As Boolean) As Boolean
+    Dim wb As Workbook
+    Dim ws As Worksheet
+    Dim fileName As String
+    Dim pos As Long
+
+    CollectFileData = False
+    pos = InStrRev(filePath, "\")
+    fileName = Mid(filePath, pos + 1)
+
+    On Error GoTo OpenError
+    Set wb = Workbooks.Open(filePath, ReadOnly:=True)
+    On Error GoTo 0
+
+    ' Resolve source worksheet — default to first sheet
+    Set ws = wb.Worksheets(1)
+    If Not loadConfig Is Nothing Then
+        If Len(loadConfig("SheetName")) > 0 Then
+            Dim wsNamed As Worksheet
+            Set wsNamed = Nothing
+            On Error Resume Next
+            Set wsNamed = wb.Worksheets(loadConfig("SheetName"))
+            On Error GoTo 0
+            If wsNamed Is Nothing Then
+                MsgBox "Sheet '" & loadConfig("SheetName") & "' not found in:" & vbCrLf & fileName & vbCrLf & vbCrLf & "Load cancelled — no changes were made.", vbCritical, "Sheet Not Found"
+                wb.Close False
+                Exit Function
+            End If
+            Set ws = wsNamed
+        End If
+    End If
+
+    ' Collect bounded or raw
+    Dim useBounded As Boolean
+    useBounded = False
+    If Not loadConfig Is Nothing Then
+        If Len(loadConfig("LeftRef")) > 0 And Len(loadConfig("RightRef")) > 0 Then useBounded = True
+    End If
+    If useBounded Then
+        If Not CollectBoundedData(ws, loadConfig("LeftRef"), loadConfig("RightRef"), fileName, headerCols, allRows, isFirstFile) Then
+            wb.Close False
+            Exit Function
+        End If
+    Else
+        CollectRawData ws, headerCols, allRows, isFirstFile
+    End If
+
+    wb.Close False
+    CollectFileData = True
+    Exit Function
+
+OpenError:
+    MsgBox "Could not open file:" & vbCrLf & fileName & vbCrLf & "Error: " & Err.Description & vbCrLf & vbCrLf & "Load cancelled — no changes were made.", vbCritical, "File Error"
+End Function
+
+' Extract the column-bounded table from a worksheet using cell references for the header row
+Private Function CollectBoundedData(ws As Worksheet, leftRef As String, rightRef As String, _
+                                     fileName As String, ByRef headerCols As Variant, _
+                                     allRows As Collection, isFirstFile As Boolean) As Boolean
+    Dim leftRng As Range, rightRng As Range
+    Dim headerRow As Long, leftCol As Long, rightCol As Long
+    Dim colCount As Long, r As Long, c As Long
+    Dim rowData() As Variant
+
+    CollectBoundedData = False
+
+    On Error Resume Next
+    Set leftRng  = ws.Range(leftRef)
+    Set rightRng = ws.Range(rightRef)
+    On Error GoTo 0
+
+    If leftRng Is Nothing Or rightRng Is Nothing Then
+        MsgBox "Invalid cell reference ('" & leftRef & "' or '" & rightRef & "') in Load Config." & vbCrLf & "File: " & fileName & vbCrLf & vbCrLf & "Load cancelled — no changes were made.", vbCritical, "Config Error"
+        Exit Function
+    End If
+
+    If leftRng.Row <> rightRng.Row Then
+        MsgBox "TableLeftHeaderIndex and TableRightHeaderIndex must be on the same row." & vbCrLf & _
+               "Left '" & leftRef & "' is row " & leftRng.Row & ", Right '" & rightRef & "' is row " & rightRng.Row & "." & vbCrLf & vbCrLf & "Load cancelled — no changes were made.", vbCritical, "Config Error"
+        Exit Function
+    End If
+
+    If rightRng.Column < leftRng.Column Then
+        MsgBox "TableRightHeaderIndex column must be to the right of TableLeftHeaderIndex." & vbCrLf & _
+               "Left: " & leftRef & ", Right: " & rightRef & vbCrLf & vbCrLf & "Load cancelled — no changes were made.", vbCritical, "Config Error"
+        Exit Function
+    End If
+
+    headerRow = leftRng.Row
+    leftCol   = leftRng.Column
+    rightCol  = rightRng.Column
+    colCount  = rightCol - leftCol + 1
+
+    ' Capture header from first file only
+    If isFirstFile Then
+        ReDim headerCols(1 To colCount)
+        For c = leftCol To rightCol
+            headerCols(c - leftCol + 1) = ws.Cells(headerRow, c).Value
+        Next c
+    End If
+
+    ' Read data rows until the left column is blank
+    r = headerRow + 1
+    Do While Len(Trim(CStr(ws.Cells(r, leftCol).Value))) > 0
+        ReDim rowData(1 To colCount)
+        For c = leftCol To rightCol
+            rowData(c - leftCol + 1) = ws.Cells(r, c).Value
+        Next c
+        allRows.Add rowData
+        r = r + 1
+    Loop
+
+    CollectBoundedData = True
+End Function
+
+' Copy the used range of a worksheet (header from first file only, data rows from all)
+Private Sub CollectRawData(ws As Worksheet, ByRef headerCols As Variant, _
+                            allRows As Collection, isFirstFile As Boolean)
+    Dim lastRow As Long, lastCol As Long, colCount As Long
+    Dim r As Long, c As Long
+    Dim rowData() As Variant
+
+    lastRow  = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    lastCol  = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+    If lastRow < 1 Or lastCol < 1 Then Exit Sub
+
+    colCount = lastCol
+
+    If isFirstFile Then
+        ReDim headerCols(1 To colCount)
+        For c = 1 To colCount
+            headerCols(c) = ws.Cells(1, c).Value
+        Next c
+    End If
+
+    If lastRow < 2 Then Exit Sub
+    For r = 2 To lastRow
+        ReDim rowData(1 To colCount)
+        For c = 1 To colCount
+            rowData(c) = ws.Cells(r, c).Value
+        Next c
+        allRows.Add rowData
+    Next r
+End Sub
+
+' Clear the target sheet and write header + all collected rows in a single block write
+Private Sub WriteCollectedData(targetSheet As Worksheet, headerCols As Variant, allRows As Collection)
+    Dim colCount As Long, rowCount As Long
+    Dim c As Long, r As Long
+    Dim rowData() As Variant
+    Dim block() As Variant
+    Dim item As Variant
+
+    colCount = UBound(headerCols)
+    rowCount = allRows.Count
+
+    targetSheet.Cells.Clear
+
+    For c = 1 To colCount
+        targetSheet.Cells(1, c).Value = headerCols(c)
+    Next c
+
+    If rowCount > 0 Then
+        ReDim block(1 To rowCount, 1 To colCount)
+        r = 0
+        For Each item In allRows
+            r = r + 1
+            rowData = item
+            For c = 1 To colCount
+                If c <= UBound(rowData) Then block(r, c) = rowData(c)
+            Next c
+        Next item
+        targetSheet.Range(targetSheet.Cells(2, 1), targetSheet.Cells(rowCount + 1, colCount)).Value = block
+    End If
+End Sub
 
 

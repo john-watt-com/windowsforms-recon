@@ -1,0 +1,9 @@
+TradeID,TotalNet,Notes
+T001,99500,Match expected
+T002,49750,Match expected
+T003,195000,Mismatch expected (trade total: 198000)
+T004,75000,Match expected
+T005,125500,Match expected
+T006,200000,Match expected
+T007,55000,Match expected
+T008,90000,Mismatch expected (trade total: 88500)
