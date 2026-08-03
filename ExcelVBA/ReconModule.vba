@@ -63,7 +63,7 @@ Private Function GetWorkflowConfig(workflowName As String) As Object
     
     For col = 1 To tblWorkflows.ListColumns.Count
         Select Case UCase(Trim(tblWorkflows.HeaderRowRange.Cells(1, col).value))
-            Case "WORKFLOW NAME"
+            Case "WORKFLOW NAME", "WORKFLOWNAME"
                 nameCol = col
             Case "RESULT SHEET PREFIX", "RESULT PREFIX"
                 prefixCol = col
@@ -138,10 +138,11 @@ Public Sub RunReconciliation(Optional workflowName As String = "")
     ' Log and report success
     LogReconciliationSuccess workflowName, reconConfigSheetName, matchCount, errorCount, reconSettings("Tolerance"), reconSettings("DetailSheet"), allIDs.Count
 
-    ' Show Match Results and return focus to form
+    ' Show only this workflow's result sheets; hide other workflows' recon/transform sheets
+    UpdateWorkflowSheetVisibility workflowName
+
     Dim wsMatchResults As Worksheet
     Set wsMatchResults = GetOrCreateWorksheet(ApplyPrefix(resultPrefix, "Match Results"))
-    If wsMatchResults.Visible <> xlSheetVisible Then wsMatchResults.Visible = xlSheetVisible
     wsMatchResults.Activate
     ReconForm.Show vbModeless
 End Sub
@@ -1327,9 +1328,8 @@ Public Sub RunTransform(Optional workflowName As String = "")
     rowCount = wsTarget.Cells(wsTarget.Rows.Count, 1).End(xlUp).row - 1
     LogTransformSuccess workflowName, transformSettings, rowCount, Timer - startTime
     
-    ' Unhide source and target sheets if hidden, then show results and return focus to form
-    If wsSource.Visible <> xlSheetVisible Then wsSource.Visible = xlSheetVisible
-    If wsTarget.Visible <> xlSheetVisible Then wsTarget.Visible = xlSheetVisible
+    ' Show only this workflow's sheets; hide other workflows' recon/transform sheets
+    UpdateWorkflowSheetVisibility workflowName
     wsTarget.Activate
     OfferSaveTransformResult wsTarget
     ReconForm.Show vbModeless
@@ -2125,6 +2125,176 @@ Private Function ApplyPrefix(prefix As String, sheetName As String) As String
         ApplyPrefix = sheetName
     End If
 End Function
+
+' Sheets that must remain visible regardless of active workflow
+Private Function IsAlwaysVisibleSheet(sheetName As String) As Boolean
+    Select Case UCase(Trim(sheetName))
+        Case "WORKFLOWS", "LOAD CONFIG", "RECON CONFIG", "TRANSFORM CONFIG", "SHEET1", "SHEET2"
+            IsAlwaysVisibleSheet = True
+        Case Else
+            IsAlwaysVisibleSheet = False
+    End Select
+End Function
+
+' Returns all workflow names from the Workflows table (enabled or not)
+Private Function GetAllWorkflowNames() As Collection
+    Dim names As New Collection
+    Dim wsWorkflows As Worksheet
+    Dim tblWorkflows As ListObject
+    Dim nameCol As Long, col As Long, row As Long
+    Dim workflowName As String
+
+    On Error Resume Next
+    Set wsWorkflows = ThisWorkbook.Worksheets("Workflows")
+    If Not wsWorkflows Is Nothing Then
+        If wsWorkflows.ListObjects.Count > 0 Then Set tblWorkflows = wsWorkflows.ListObjects(1)
+    End If
+    On Error GoTo 0
+
+    If tblWorkflows Is Nothing Then
+        names.Add "Default", "DEFAULT"
+        Set GetAllWorkflowNames = names
+        Exit Function
+    End If
+
+    For col = 1 To tblWorkflows.ListColumns.Count
+        Select Case UCase(Trim(tblWorkflows.HeaderRowRange.Cells(1, col).value))
+            Case "WORKFLOW NAME", "WORKFLOWNAME"
+                nameCol = col
+        End Select
+    Next col
+
+    If nameCol = 0 Then
+        names.Add "Default", "DEFAULT"
+        Set GetAllWorkflowNames = names
+        Exit Function
+    End If
+
+    On Error Resume Next
+    For row = 1 To tblWorkflows.ListRows.Count
+        workflowName = Trim(CStr(tblWorkflows.DataBodyRange.Cells(row, nameCol).value))
+        If Len(workflowName) > 0 Then
+            names.Add workflowName, UCase(workflowName)
+        End If
+    Next row
+    On Error GoTo 0
+
+    If names.Count = 0 Then names.Add "Default", "DEFAULT"
+    Set GetAllWorkflowNames = names
+End Function
+
+' Expected recon + transform sheet names for a workflow (with Result Sheet Prefix applied)
+Private Function GetExpectedSheetsForWorkflow(workflowName As String, prefix As String) As Collection
+    Dim sheets As New Collection
+    Dim sheetName As String
+    Dim wsTC As Worksheet
+    Dim src As String, tgt As String
+
+    On Error Resume Next
+    sheetName = ApplyPrefix(prefix, "All Results")
+    sheets.Add sheetName, UCase(sheetName)
+    sheetName = ApplyPrefix(prefix, "Match Results")
+    sheets.Add sheetName, UCase(sheetName)
+    sheetName = ApplyPrefix(prefix, "Error Results")
+    sheets.Add sheetName, UCase(sheetName)
+
+    Set wsTC = ThisWorkbook.Worksheets("Transform Config")
+    If Not wsTC Is Nothing Then
+        src = GetConfigValue(wsTC, "Source Sheet", workflowName)
+        tgt = GetConfigValue(wsTC, "Target Sheet", workflowName)
+        If Len(src) > 0 Then
+            sheetName = ApplyPrefix(prefix, src)
+            sheets.Add sheetName, UCase(sheetName)
+        End If
+        If Len(tgt) > 0 Then
+            sheetName = ApplyPrefix(prefix, tgt)
+            sheets.Add sheetName, UCase(sheetName)
+        End If
+    End If
+    On Error GoTo 0
+
+    Set GetExpectedSheetsForWorkflow = sheets
+End Function
+
+' Map sheetNameUpper -> owning workflow name (recon/transform result sheets only)
+Private Function BuildWorkflowSheetOwnership() As Object
+    Dim ownership As Object
+    Dim workflows As Collection
+    Dim wf As Variant
+    Dim prefix As String
+    Dim owned As Collection
+    Dim sheetName As Variant
+    Dim key As String
+    Dim ws As Worksheet
+    Dim prefixTrim As String
+
+    Set ownership = CreateObject("Scripting.Dictionary")
+    Set workflows = GetAllWorkflowNames()
+
+    For Each wf In workflows
+        prefix = GetWorkflowConfig(CStr(wf))("ResultSheetPrefix")
+        Set owned = GetExpectedSheetsForWorkflow(CStr(wf), prefix)
+
+        For Each sheetName In owned
+            key = UCase(CStr(sheetName))
+            If Not ownership.Exists(key) Then ownership.Add key, CStr(wf)
+        Next sheetName
+
+        ' Claim any existing sheets that use this workflow's non-empty prefix
+        prefixTrim = Trim(prefix)
+        If Len(prefixTrim) > 0 Then
+            For Each ws In ThisWorkbook.Worksheets
+                If StrComp(Left(ws.Name, Len(prefixTrim) + 1), prefixTrim & " ", vbTextCompare) = 0 Then
+                    key = UCase(ws.Name)
+                    If Not ownership.Exists(key) Then ownership.Add key, CStr(wf)
+                End If
+            Next ws
+        End If
+    Next wf
+
+    Set BuildWorkflowSheetOwnership = ownership
+End Function
+
+' Show active workflow recon/transform sheets; hide other workflows' result sheets.
+' Always keeps Workflows, Load/Recon/Transform Config, Sheet1, and Sheet2 visible.
+Public Sub UpdateWorkflowSheetVisibility(Optional workflowName As String = "")
+    Dim activeName As String
+    Dim ownership As Object
+    Dim ws As Worksheet
+    Dim key As String
+    Dim owner As String
+    Dim prevUpdating As Boolean
+
+    On Error GoTo ErrorHandler
+
+    activeName = ResolveWorkflowName(workflowName)
+    Set ownership = BuildWorkflowSheetOwnership()
+
+    prevUpdating = Application.ScreenUpdating
+    Application.ScreenUpdating = False
+
+    For Each ws In ThisWorkbook.Worksheets
+        If IsAlwaysVisibleSheet(ws.Name) Then
+            If ws.Visible <> xlSheetVisible Then ws.Visible = xlSheetVisible
+        Else
+            key = UCase(ws.Name)
+            If ownership.Exists(key) Then
+                owner = CStr(ownership(key))
+                If StrComp(owner, activeName, vbTextCompare) = 0 Then
+                    If ws.Visible <> xlSheetVisible Then ws.Visible = xlSheetVisible
+                Else
+                    If ws.Visible = xlSheetVisible Then ws.Visible = xlSheetHidden
+                End If
+            End If
+        End If
+    Next ws
+
+    Application.ScreenUpdating = prevUpdating
+    Exit Sub
+
+ErrorHandler:
+    Application.ScreenUpdating = prevUpdating
+End Sub
 
 ' Helper: Log activity to unified Activity Log sheet
 Private Sub LogActivity(operationType As String, workflowName As String, _

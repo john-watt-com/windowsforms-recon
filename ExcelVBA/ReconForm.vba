@@ -97,6 +97,7 @@ Private Sub PopulateWorkflows()
         cboWorkflow.AddItem "Default"
         cboWorkflow.ListIndex = 0
         ActiveWorkflow = "Default"
+        UpdateWorkflowSheetVisibility ActiveWorkflow
         Exit Sub
     End If
     
@@ -113,6 +114,7 @@ Private Sub PopulateWorkflows()
         cboWorkflow.AddItem "Default"
         cboWorkflow.ListIndex = 0
         ActiveWorkflow = "Default"
+        UpdateWorkflowSheetVisibility ActiveWorkflow
         Exit Sub
     End If
     
@@ -132,9 +134,9 @@ Private Sub PopulateWorkflows()
         cboWorkflow.AddItem "Default"
         cboWorkflow.ListIndex = 0
         ActiveWorkflow = "Default"
+        UpdateWorkflowSheetVisibility ActiveWorkflow
         Exit Sub
     End If
-
     ' Populate combo box with workflow names where Enabled is TRUE
     Dim row As Long
     For row = 1 To tblWorkflows.ListRows.Count
@@ -155,12 +157,14 @@ Private Sub PopulateWorkflows()
     If cboWorkflow.ListCount > 0 Then
         cboWorkflow.ListIndex = 0
         ActiveWorkflow = cboWorkflow.Value
+        UpdateWorkflowSheetVisibility ActiveWorkflow
     End If
 End Sub
 
 Private Sub cboWorkflow_Change()
-    ' Update ActiveWorkflow when selection changes
+    ' Update ActiveWorkflow when selection changes and show only that workflow's result sheets
     If cboWorkflow.ListIndex >= 0 Then
-        ActiveWorkflow = cboWorkflow.value
+        ActiveWorkflow = cboWorkflow.Value
+        UpdateWorkflowSheetVisibility ActiveWorkflow
     End If
 End Sub
