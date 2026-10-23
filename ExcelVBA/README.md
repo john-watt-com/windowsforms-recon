@@ -95,4 +95,4 @@ Save the Excel workbook as `.xlsm` and share directly. Recipients must enable ma
 
 ## Support
 
-This tool replicates the logic from the C# app located in `../ExcelVBA/` in this repository.
+See the docs in this folder for setup, config examples, and transform guides.

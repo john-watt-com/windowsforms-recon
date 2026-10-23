@@ -1,7 +1,6 @@
 Option Explicit
 
 ' Main reconciliation module
-' Excel reconciliation module
 
 ' Module-level variable to store active workflow
 Public ActiveWorkflow As String
