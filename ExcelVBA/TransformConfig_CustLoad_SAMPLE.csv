@@ -3,6 +3,7 @@ Workflow,Setting,Value
 Cust Load,Name,Cust Load Report
 Cust Load,Source Sheet,All Results
 Cust Load,Target Sheet,Cust Load Report
+Cust Load,Convert Formulas To Values,TRUE
 
 --- TABLE 2: TransformColumnsTable (Workflow / Order / Target Column / Type / Source) ---
 Workflow,Order,Target Column,Type,Source

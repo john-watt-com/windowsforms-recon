@@ -289,6 +289,29 @@ For large datasets, avoid volatile functions like:
 
 ---
 
+## Optional Transform Settings
+
+When using **TransformSettingsTable** (Workflow / Setting / Value), these optional settings are supported alongside `Name`, `Source Sheet`, and `Target Sheet`:
+
+| Setting | Value | Description |
+|---------|-------|-------------|
+| Filter | _(filter expression)_ | Row filter on the source sheet (same syntax as recon filters) |
+| Sort Order | _(e.g., `Difference DESC,ID`)_ | Sort the target table after transform |
+| Convert Formulas To Values | `TRUE` | After formulas calculate, replace them with static values (like Paste Values). Use for export snapshots. Omit or set `FALSE` to keep live formulas. |
+
+Truthy values accepted: `TRUE`, `YES`, `Y`, `1` (case-insensitive).
+
+**Example:**
+
+| Workflow | Setting | Value |
+|----------|---------|-------|
+| Cust Load | Name | Cust Load Report |
+| Cust Load | Source Sheet | All Results |
+| Cust Load | Target Sheet | Cust Load Report |
+| Cust Load | Convert Formulas To Values | TRUE |
+
+---
+
 ## Running the Transform
 
 ### From the UserForm

@@ -1,6 +1,7 @@
 Table/Section,Setting Name,Required/Optional,Data Type,Valid Values,Description,Notes
 TransformSettingsTable,SourceSheetName,Required,Text,Any valid sheet name,Name of the source sheet to transform data from,Located in Transform Config sheet
 TransformSettingsTable,TargetSheetName,Required,Text,Any valid sheet name,Name of the target sheet where transformed data will be placed,Located in Transform Config sheet
+TransformSettingsTable,Convert Formulas To Values,Optional,Boolean,TRUE/FALSE (also YES/Y/1),After transform formulas calculate replace them with static values,Omit or FALSE keeps live formulas; useful for exports
 TransformSettingsTable,Workflow,Optional,Text,Any text identifier,Workflow identifier for filtering transform settings,Leave blank for default workflow
 TransformColumnsTable,TargetColumnName,Required,Text,Any column name,Name of the column in the target sheet,Located in Transform Config sheet
 TransformColumnsTable,SourceColumnName,Required,Text,Source column name or formula,Name of the column in the source sheet or a calculated formula,Located in Transform Config sheet
