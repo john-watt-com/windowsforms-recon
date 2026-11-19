@@ -1321,7 +1321,7 @@ Public Sub RunTransform(Optional workflowName As String = "")
     If columnDefs Is Nothing Then Exit Sub
     
     ' Execute transformation
-    ApplyTransformation wsSource, wsTarget, columnDefs, transformSettings("Filter"), transformSettings("SortOrder")
+    ApplyTransformation wsSource, wsTarget, columnDefs, transformSettings("Filter"), transformSettings("SortOrder"), transformSettings("ConvertFormulasToValues")
     
     ' Calculate results and log success
     rowCount = wsTarget.Cells(wsTarget.Rows.Count, 1).End(xlUp).row - 1
@@ -1367,8 +1367,19 @@ Private Function ReadTransformSettings(wsTransformConfig As Worksheet, resultPre
     settings("TargetSheet") = ApplyPrefix(resultPrefix, targetSheetName)
     settings("Filter") = GetConfigValue(wsTransformConfig, "Filter", workflowName)
     settings("SortOrder") = GetConfigValue(wsTransformConfig, "Sort Order", workflowName)
+    settings("ConvertFormulasToValues") = IsTruthyConfig(GetConfigValue(wsTransformConfig, "Convert Formulas To Values", workflowName))
     
     Set ReadTransformSettings = settings
+End Function
+
+' TRUE / YES / Y / 1 (case-insensitive). Blank or anything else is False.
+Private Function IsTruthyConfig(value As String) As Boolean
+    Select Case UCase(Trim(value))
+        Case "TRUE", "YES", "Y", "1"
+            IsTruthyConfig = True
+        Case Else
+            IsTruthyConfig = False
+    End Select
 End Function
 
 Private Function ValidateSourceSheet(sourceSheetName As String) As Worksheet
@@ -1513,7 +1524,7 @@ Private Sub LogTransformSuccess(workflowName As String, transformSettings As Obj
            "Target: " & transformSettings("TargetSheet"), vbInformation, "Success"
 End Sub
 
-Private Sub ApplyTransformation(wsSource As Worksheet, wsTarget As Worksheet, columnDefs As Collection, Optional filterExpr As String = "", Optional sortOrder As String = "")
+Private Sub ApplyTransformation(wsSource As Worksheet, wsTarget As Worksheet, columnDefs As Collection, Optional filterExpr As String = "", Optional sortOrder As String = "", Optional convertFormulasToValues As Boolean = False)
     Dim sortedDefs() As Object
     Dim colCount As Long
     Dim targetRow As Long
@@ -1532,6 +1543,22 @@ Private Sub ApplyTransformation(wsSource As Worksheet, wsTarget As Worksheet, co
     ' Sort and autofit
     If Len(sortOrder) > 0 Then ApplySorting wsTarget, sortOrder
     wsTarget.Columns("A:" & ColLetter(colCount)).AutoFit
+
+    ' Optional final step: bake calculated formulas to static values (export-friendly)
+    If convertFormulasToValues Then
+        ConvertSheetFormulasToValues wsTarget, targetRow, colCount
+    End If
+End Sub
+
+' Equivalent to selecting the used block and Paste Values after formulas have calculated.
+Private Sub ConvertSheetFormulasToValues(ws As Worksheet, lastRow As Long, lastCol As Long)
+    Dim rng As Range
+
+    If lastRow < 1 Or lastCol < 1 Then Exit Sub
+
+    Set rng = ws.Range(ws.Cells(1, 1), ws.Cells(lastRow, lastCol))
+    Application.Calculate
+    rng.Value = rng.Value
 End Sub
 
 Private Function SortColumnDefsByOrder(columnDefs As Collection) As Object()
