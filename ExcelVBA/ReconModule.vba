@@ -2718,6 +2718,10 @@ Private Function CollectFileData(filePath As String, loadConfig As Object, _
         End If
     End If
 
+    ' AutoFilter / table filters hide rows; End(xlUp) then under-counts.
+    ' Source is opened ReadOnly and closed without saving, so clearing is safe.
+    ClearWorksheetFilters ws
+
     ' Collect bounded or raw
     Dim useBounded As Boolean
     useBounded = False
@@ -2801,6 +2805,55 @@ Private Function CollectBoundedData(ws As Worksheet, leftRef As String, rightRef
     CollectBoundedData = True
 End Function
 
+' Show all rows / remove AutoFilter so import reads the full dataset.
+' Safe on import sources that are closed without saving.
+Private Sub ClearWorksheetFilters(ws As Worksheet)
+    Dim lo As ListObject
+
+    On Error Resume Next
+    If ws.FilterMode Then ws.ShowAllData
+    If ws.AutoFilterMode Then ws.AutoFilterMode = False
+
+    For Each lo In ws.ListObjects
+        If Not lo.AutoFilter Is Nothing Then
+            If lo.AutoFilter.FilterMode Then lo.AutoFilter.ShowAllData
+        End If
+    Next lo
+    On Error GoTo 0
+End Sub
+
+' Last non-empty row in a column, including cells hidden by AutoFilter
+Private Function GetLastDataRow(ws As Worksheet, col As Long) As Long
+    Dim rng As Range
+
+    On Error Resume Next
+    Set rng = ws.Columns(col).Find(What:="*", LookIn:=xlFormulas, LookAt:=xlPart, _
+                                   SearchOrder:=xlByRows, SearchDirection:=xlPrevious)
+    On Error GoTo 0
+
+    If rng Is Nothing Then
+        GetLastDataRow = 0
+    Else
+        GetLastDataRow = rng.Row
+    End If
+End Function
+
+' Last non-empty column in a row, including cells hidden by AutoFilter
+Private Function GetLastDataCol(ws As Worksheet, row As Long) As Long
+    Dim rng As Range
+
+    On Error Resume Next
+    Set rng = ws.Rows(row).Find(What:="*", LookIn:=xlFormulas, LookAt:=xlPart, _
+                                SearchOrder:=xlByColumns, SearchDirection:=xlPrevious)
+    On Error GoTo 0
+
+    If rng Is Nothing Then
+        GetLastDataCol = 0
+    Else
+        GetLastDataCol = rng.Column
+    End If
+End Function
+
 ' Copy the used range of a worksheet (header from first file only, data rows from all)
 Private Sub CollectRawData(ws As Worksheet, ByRef headerCols As Variant, _
                             allRows As Collection, isFirstFile As Boolean)
@@ -2808,8 +2861,9 @@ Private Sub CollectRawData(ws As Worksheet, ByRef headerCols As Variant, _
     Dim r As Long, c As Long
     Dim rowData() As Variant
 
-    lastRow  = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
-    lastCol  = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+    ' Prefer Find over End(xlUp)/End(xlToLeft) so filtered-out rows still count
+    lastRow = GetLastDataRow(ws, 1)
+    lastCol = GetLastDataCol(ws, 1)
     If lastRow < 1 Or lastCol < 1 Then Exit Sub
 
     colCount = lastCol
@@ -2842,6 +2896,7 @@ Private Sub WriteCollectedData(targetSheet As Worksheet, headerCols As Variant, 
     colCount = UBound(headerCols)
     rowCount = allRows.Count
 
+    ClearWorksheetFilters targetSheet
     targetSheet.Cells.Clear
 
     For c = 1 To colCount
